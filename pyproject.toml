@@ -1,0 +1,12 @@
+[project]
+name = "llm-battle-cars"
+version = "1.0.0"
+description = "3D Modular Battle-Car Design & BO3 Hazard-Arena Tournament Benchmark for LLMs"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "mujoco>=3.1.0",
+    "numpy>=1.24.0",
+    "matplotlib>=3.7.0",
+    "pillow>=10.0.0",
+]

@@ -1,0 +1,67 @@
+{
+  "meta": {
+    "model_name": "Sparring-Bot",
+    "car_name": "Dummy Flipper",
+    "slogan": "先掀翻你，再给你头顶来一记雷神重锤！",
+    "design_concept": "Middleweight pneumatic front flipper + overhead battle-hammer combo knight (~33kg) with side shields.",
+    "primary_color": "#7C3AED",
+    "secondary_color": "#FBBF24",
+    "accent_color": "#EC4899",
+    "chassis_finish": "metallic"
+  },
+  "chassis": {
+    "size": [0.54, 0.40, 0.18],
+    "density": 270
+  },
+  "parts": [
+    {"id": "fl", "type": "wheel", "mount": "front_left", "params": {"radius": 0.18, "width": 0.06, "gear": "balanced"}},
+    {"id": "fr", "type": "wheel", "mount": "front_right", "params": {"radius": 0.18, "width": 0.06, "gear": "balanced"}},
+    {"id": "bl", "type": "wheel", "mount": "back_left", "params": {"radius": 0.18, "width": 0.06, "gear": "balanced"}},
+    {"id": "br", "type": "wheel", "mount": "back_right", "params": {"radius": 0.18, "width": 0.06, "gear": "balanced"}},
+    {"id": "launcher", "type": "flipper", "mount": "front", "color": "#FBBF24", "params": {"length": 0.42, "width": 0.32}},
+    {"id": "warhammer", "type": "hammer", "mount": "top_front", "color": "#EC4899", "params": {"arm_length": 0.48, "head_size": 0.13}},
+    {"id": "sh_l", "type": "armor_shield", "mount": "left", "offset": [0.0, 0.05, 0.02], "params": {"width": 0.36, "height": 0.18}},
+    {"id": "sh_r", "type": "armor_shield", "mount": "right", "offset": [0.0, -0.05, 0.02], "params": {"width": 0.36, "height": 0.18}}
+  ],
+  "decorations": [],
+  "strategy": {
+    "let": {
+      "turn_c": "clamp(center_angle_deg / 52.0, -1.0, 1.0)",
+      "turn_e": "clamp(enemy_angle_deg / 58.0, -1.0, 1.0)"
+    },
+    "rules": [
+      {
+        "name": "self_right_when_inverted",
+        "when": "is_inverted",
+        "action": {
+          "left": -0.7,
+          "right": 0.7,
+          "flipper": true,
+          "hammer": true
+        }
+      },
+      {
+        "name": "cliff_guard",
+        "when": "edge_dist < 0.75 and abs_edge_angle_deg < 75",
+        "action": {
+          "left": "clamp(0.90 * max(0.15, cos_deg(center_angle_deg)) - turn_c, -1.0, 1.0)",
+          "right": "clamp(0.90 * max(0.15, cos_deg(center_angle_deg)) + turn_c, -1.0, 1.0)"
+        }
+      },
+      {
+        "name": "uppercut_and_slam",
+        "when": "enemy_dist < 0.88 and abs_enemy_angle_deg < 28",
+        "action": {
+          "left": "clamp(1.0 - turn_e, -1.0, 1.0)",
+          "right": "clamp(1.0 + turn_e, -1.0, 1.0)",
+          "flipper": true,
+          "hammer": true
+        }
+      }
+    ],
+    "default_action": {
+      "left": "clamp(0.88 * max(0.18, cos_deg(enemy_angle_deg)) - turn_e, -1.0, 1.0)",
+      "right": "clamp(0.88 * max(0.18, cos_deg(enemy_angle_deg)) + turn_e, -1.0, 1.0)"
+    }
+  }
+}

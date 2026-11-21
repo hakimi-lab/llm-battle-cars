@@ -1,0 +1,10 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.arena_sim_quota.json
+previews/
+tournament_out/
+renders/
+*.npz
+.DS_Store

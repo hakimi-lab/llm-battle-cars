@@ -1,0 +1,68 @@
+{
+  "meta": {
+    "model_name": "BuiltIn-Sparring",
+    "car_name": "Dummy Ranger",
+    "slogan": "拉开距离环绕射击！",
+    "design_concept": "Lightweight high-speed ranged sparring bot (~21kg) with speed-geared wheels and twin plasma cannons.",
+    "primary_color": "#0284C7",
+    "secondary_color": "#38BDF8",
+    "accent_color": "#22D3EE",
+    "chassis_finish": "metallic"
+  },
+  "chassis": {
+    "size": [0.50, 0.38, 0.14],
+    "density": 215
+  },
+  "parts": [
+    {"id": "fl", "type": "wheel", "mount": "front_left", "params": {"radius": 0.17, "width": 0.055, "gear": "speed"}},
+    {"id": "fr", "type": "wheel", "mount": "front_right", "params": {"radius": 0.17, "width": 0.055, "gear": "speed"}},
+    {"id": "bl", "type": "wheel", "mount": "back_left", "params": {"radius": 0.17, "width": 0.055, "gear": "speed"}},
+    {"id": "br", "type": "wheel", "mount": "back_right", "params": {"radius": 0.17, "width": 0.055, "gear": "speed"}},
+    {"id": "cannon_main", "type": "energy_cannon", "mount": "top_front", "params": {"mode": "heavy", "pitch_deg": 0.0}},
+    {"id": "cannon_sub", "type": "energy_cannon", "mount": "top_back", "params": {"mode": "rapid", "pitch_deg": 0.0}},
+    {"id": "keel", "type": "gyro_stabilizer", "mount": "bottom", "params": {"radius": 0.13, "thickness": 0.04}}
+  ],
+  "decorations": [],
+  "strategy": {
+    "let": {
+      "turn_c": "clamp(center_angle_deg / 50.0, -1.0, 1.0)",
+      "turn_e": "clamp(enemy_angle_deg / 52.0, -1.0, 1.0)",
+      "orbit_ang": "wrap_deg(enemy_angle_deg + 72.0 - clamp((enemy_dist - 1.85) * 30.0, -45.0, 45.0))",
+      "turn_orb": "clamp(orbit_ang / 58.0, -1.0, 1.0)"
+    },
+    "rules": [
+      {
+        "name": "edge_escape",
+        "when": "edge_dist < 1.15 and abs_edge_angle_deg < 110",
+        "action": {
+          "left": "clamp(0.92 * max(0.2, cos_deg(center_angle_deg)) - turn_c, -1.0, 1.0)",
+          "right": "clamp(0.92 * max(0.2, cos_deg(center_angle_deg)) + turn_c, -1.0, 1.0)",
+          "cannon": "cannon_ready and abs_enemy_angle_deg < 16"
+        }
+      },
+      {
+        "name": "unstick",
+        "when": "stalled_sec > 1.0",
+        "action": {
+          "left": "-0.85 + 0.40 * sign(sin(time_sec * 6.0))",
+          "right": "-0.85 - 0.40 * sign(sin(time_sec * 6.0))",
+          "cannon": true
+        }
+      },
+      {
+        "name": "aim_and_kite",
+        "when": "cannon_ready and has_line_of_sight and enemy_dist > 1.35",
+        "action": {
+          "left": "clamp((0.55 if enemy_dist > 1.9 else -0.45) - turn_e, -1.0, 1.0)",
+          "right": "clamp((0.55 if enemy_dist > 1.9 else -0.45) + turn_e, -1.0, 1.0)",
+          "cannon": "abs_enemy_angle_deg < 15"
+        }
+      }
+    ],
+    "default_action": {
+      "left": "clamp(0.84 * max(0.25, cos_deg(orbit_ang)) - turn_orb, -1.0, 1.0)",
+      "right": "clamp(0.84 * max(0.25, cos_deg(orbit_ang)) + turn_orb, -1.0, 1.0)",
+      "cannon": "has_line_of_sight and abs_enemy_angle_deg < 16"
+    }
+  }
+}

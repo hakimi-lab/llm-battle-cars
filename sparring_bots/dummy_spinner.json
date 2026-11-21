@@ -1,0 +1,59 @@
+{
+  "meta": {
+    "model_name": "Sparring-Bot",
+    "car_name": "Dummy Spinner",
+    "slogan": "别靠近我一米之内，否则直接送你出界！",
+    "design_concept": "Invertible monster-wheel brawler (~47kg) carrying a heavy horizontal cleaver bar on its nose.",
+    "primary_color": "#DC2626",
+    "secondary_color": "#111827",
+    "accent_color": "#10B981",
+    "chassis_finish": "matte"
+  },
+  "chassis": {
+    "size": [0.48, 0.42, 0.16],
+    "density": 260
+  },
+  "parts": [
+    {"id": "ml_w", "type": "monster_wheel", "mount": "front_left", "params": {"radius": 0.28, "width": 0.10, "gear": "balanced"}},
+    {"id": "mr_w", "type": "monster_wheel", "mount": "front_right", "params": {"radius": 0.28, "width": 0.10, "gear": "balanced"}},
+    {"id": "rl_w", "type": "wheel", "mount": "back_left", "params": {"radius": 0.22, "width": 0.07, "gear": "balanced"}},
+    {"id": "rr_w", "type": "wheel", "mount": "back_right", "params": {"radius": 0.22, "width": 0.07, "gear": "balanced"}},
+    {"id": "nose_boom", "type": "frame", "mount": "front", "params": {"size": [0.24, 0.12, 0.09]}},
+    {"id": "cleaver", "type": "spinner_horiz", "parent": "nose_boom", "mount": "front", "color": "#10B981", "params": {"radius": 0.46, "height_offset": 0.0, "spin_dir": 1}},
+    {"id": "keel", "type": "gyro_stabilizer", "mount": "bottom"}
+  ],
+  "decorations": [],
+  "strategy": {
+    "let": {
+      "turn_c": "clamp(center_angle_deg / 52.0, -1.0, 1.0)",
+      "turn_e": "clamp(enemy_angle_deg / 60.0, -1.0, 1.0)",
+      "raw_l": "clamp(0.84 * max(0.15, cos_deg(enemy_angle_deg)) - turn_e, -1.0, 1.0)",
+      "raw_r": "clamp(0.84 * max(0.15, cos_deg(enemy_angle_deg)) + turn_e, -1.0, 1.0)"
+    },
+    "rules": [
+      {
+        "name": "save_from_cliff",
+        "when": "edge_dist < 0.78 and abs_edge_angle_deg < 75",
+        "action": {
+          "left": "iff(is_inverted, -clamp(0.90 + turn_c, -1.0, 1.0), clamp(0.90 - turn_c, -1.0, 1.0))",
+          "right": "iff(is_inverted, -clamp(0.90 - turn_c, -1.0, 1.0), clamp(0.90 + turn_c, -1.0, 1.0))",
+          "spinner": 1.0
+        }
+      },
+      {
+        "name": "unstick",
+        "when": "stalled_sec > 1.3",
+        "action": {
+          "left": "-0.85 + 0.40 * sign(sin(time_sec * 5.0))",
+          "right": "-0.85 - 0.40 * sign(sin(time_sec * 5.0))",
+          "spinner": -1.0
+        }
+      }
+    ],
+    "default_action": {
+      "left": "iff(is_inverted, -raw_r, raw_l)",
+      "right": "iff(is_inverted, -raw_l, raw_r)",
+      "spinner": 1.0
+    }
+  }
+}

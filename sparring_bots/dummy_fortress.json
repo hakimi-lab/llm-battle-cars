@@ -1,0 +1,65 @@
+{
+  "meta": {
+    "model_name": "Sparring-Bot",
+    "car_name": "Dummy Fortress",
+    "slogan": "撞不动我，更掀不翻我，吃我一发电磁重拳！",
+    "design_concept": "Heavy armored fortress (~51kg) with dual belly gyro ballast, front steel plow, and high-impulse telescoping piston ram.",
+    "primary_color": "#334155",
+    "secondary_color": "#EAB308",
+    "accent_color": "#22D3EE",
+    "chassis_finish": "metallic"
+  },
+  "chassis": {
+    "size": [0.58, 0.46, 0.20],
+    "density": 340
+  },
+  "parts": [
+    {"id": "fl", "type": "wheel", "mount": "front_left", "params": {"radius": 0.19, "width": 0.07, "gear": "torque"}},
+    {"id": "fr", "type": "wheel", "mount": "front_right", "params": {"radius": 0.19, "width": 0.07, "gear": "torque"}},
+    {"id": "bl", "type": "wheel", "mount": "back_left", "params": {"radius": 0.19, "width": 0.07, "gear": "torque"}},
+    {"id": "br", "type": "wheel", "mount": "back_right", "params": {"radius": 0.19, "width": 0.07, "gear": "torque"}},
+    {"id": "plow", "type": "wedge", "mount": "front", "color": "#EAB308", "params": {"width": 0.52, "length": 0.26, "slope_deg": 30}},
+    {"id": "puncher", "type": "piston_punch", "mount": "front", "offset": [0.02, 0.0, 0.05], "color": "#22D3EE", "params": {"stroke": 0.48, "head_width": 0.22}},
+    {"id": "rear_armor", "type": "armor_shield", "mount": "back", "params": {"width": 0.44, "height": 0.20, "thickness": 0.05}},
+    {"id": "keel1", "type": "gyro_stabilizer", "mount": "bottom", "offset": [0.10, 0.0, 0.0]},
+    {"id": "keel2", "type": "gyro_stabilizer", "mount": "bottom", "offset": [-0.10, 0.0, 0.0]}
+  ],
+  "decorations": [],
+  "strategy": {
+    "let": {
+      "turn_c": "clamp(center_angle_deg / 50.0, -1.0, 1.0)",
+      "turn_e": "clamp(enemy_angle_deg / 55.0, -1.0, 1.0)"
+    },
+    "rules": [
+      {
+        "name": "edge_retreat",
+        "when": "edge_dist < 0.72 and abs_edge_angle_deg < 75",
+        "action": {
+          "left": "clamp(0.90 * max(0.15, cos_deg(center_angle_deg)) - turn_c, -1.0, 1.0)",
+          "right": "clamp(0.90 * max(0.15, cos_deg(center_angle_deg)) + turn_c, -1.0, 1.0)"
+        }
+      },
+      {
+        "name": "snipe_punch",
+        "when": "enemy_dist < 1.05 and abs_enemy_angle_deg < 22",
+        "action": {
+          "left": "clamp(0.96 - turn_e, -1.0, 1.0)",
+          "right": "clamp(0.96 + turn_e, -1.0, 1.0)",
+          "piston": true
+        }
+      },
+      {
+        "name": "unstick",
+        "when": "stalled_sec > 1.4",
+        "action": {
+          "left": "-0.85 + 0.40 * sign(sin(time_sec * 5.0))",
+          "right": "-0.85 - 0.40 * sign(sin(time_sec * 5.0))"
+        }
+      }
+    ],
+    "default_action": {
+      "left": "clamp(0.84 * max(0.18, cos_deg(enemy_angle_deg)) - turn_e, -1.0, 1.0)",
+      "right": "clamp(0.84 * max(0.18, cos_deg(enemy_angle_deg)) + turn_e, -1.0, 1.0)"
+    }
+  }
+}
