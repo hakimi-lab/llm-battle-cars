@@ -2,8 +2,8 @@
   "meta": {
     "model_name": "BuiltIn-Sparring",
     "car_name": "Dummy Ranger",
-    "slogan": "拉开距离环绕射击！",
-    "design_concept": "Lightweight high-speed ranged sparring bot (~21kg) with speed-geared wheels and twin plasma cannons.",
+    "slogan": "侧向环绕走位 + 360°旋转炮塔预判射击！",
+    "design_concept": "Lightweight high-speed ranged sparring bot (~21kg) with speed-geared wheels and twin 360-deg rotatable plasma cannon turrets.",
     "primary_color": "#0284C7",
     "secondary_color": "#38BDF8",
     "accent_color": "#22D3EE",
@@ -26,9 +26,12 @@
   "strategy": {
     "let": {
       "turn_c": "clamp(center_angle_deg / 50.0, -1.0, 1.0)",
-      "turn_e": "clamp(enemy_angle_deg / 52.0, -1.0, 1.0)",
-      "orbit_ang": "wrap_deg(enemy_angle_deg + 72.0 - clamp((enemy_dist - 1.85) * 30.0, -45.0, 45.0))",
-      "turn_orb": "clamp(orbit_ang / 58.0, -1.0, 1.0)"
+      "orbit_ang": "wrap_deg(enemy_angle_deg + 78.0 - clamp((enemy_dist - 1.95) * 32.0, -48.0, 48.0))",
+      "turn_orb": "clamp(orbit_ang / 55.0, -1.0, 1.0)",
+      "lead_t": "enemy_dist / 14.5",
+      "lead_dx": "(enemy_x + enemy_vx * lead_t) - self_x",
+      "lead_dy": "(enemy_y + enemy_vy * lead_t) - self_y",
+      "turret_aim": "wrap_deg(atan2_deg(lead_dy, lead_dx) - self_yaw_deg)"
     },
     "rules": [
       {
@@ -37,7 +40,18 @@
         "action": {
           "left": "clamp(0.92 * max(0.2, cos_deg(center_angle_deg)) - turn_c, -1.0, 1.0)",
           "right": "clamp(0.92 * max(0.2, cos_deg(center_angle_deg)) + turn_c, -1.0, 1.0)",
-          "cannon": "cannon_ready and abs_enemy_angle_deg < 16"
+          "cannon_yaw_deg": "turret_aim",
+          "cannon": "cannon_ready and has_line_of_sight and abs_cannon_enemy_angle_deg < 10"
+        }
+      },
+      {
+        "name": "avoid_spring_catapult",
+        "when": "spring_ready and spring_dist < 0.95 and abs_spring_angle_deg < 85",
+        "action": {
+          "left": "clamp(0.80 - turn_c, -1.0, 1.0)",
+          "right": "clamp(0.80 + turn_c, -1.0, 1.0)",
+          "cannon_yaw_deg": "turret_aim",
+          "cannon": "cannon_ready and has_line_of_sight and abs_cannon_enemy_angle_deg < 9"
         }
       },
       {
@@ -46,23 +60,16 @@
         "action": {
           "left": "-0.85 + 0.40 * sign(sin(time_sec * 6.0))",
           "right": "-0.85 - 0.40 * sign(sin(time_sec * 6.0))",
-          "cannon": true
-        }
-      },
-      {
-        "name": "aim_and_kite",
-        "when": "cannon_ready and has_line_of_sight and enemy_dist > 1.35",
-        "action": {
-          "left": "clamp((0.55 if enemy_dist > 1.9 else -0.45) - turn_e, -1.0, 1.0)",
-          "right": "clamp((0.55 if enemy_dist > 1.9 else -0.45) + turn_e, -1.0, 1.0)",
-          "cannon": "abs_enemy_angle_deg < 15"
+          "cannon_yaw_deg": "turret_aim",
+          "cannon": "cannon_ready and abs_cannon_enemy_angle_deg < 12"
         }
       }
     ],
     "default_action": {
-      "left": "clamp(0.84 * max(0.25, cos_deg(orbit_ang)) - turn_orb, -1.0, 1.0)",
-      "right": "clamp(0.84 * max(0.25, cos_deg(orbit_ang)) + turn_orb, -1.0, 1.0)",
-      "cannon": "has_line_of_sight and abs_enemy_angle_deg < 16"
+      "left": "clamp(0.86 * max(0.28, cos_deg(orbit_ang)) - turn_orb, -1.0, 1.0)",
+      "right": "clamp(0.86 * max(0.28, cos_deg(orbit_ang)) + turn_orb, -1.0, 1.0)",
+      "cannon_yaw_deg": "turret_aim",
+      "cannon": "cannon_ready and has_line_of_sight and abs_cannon_enemy_angle_deg < 9"
     }
   }
 }

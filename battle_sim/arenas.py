@@ -298,8 +298,8 @@ def _build_flush_spring_xml(sp: Dict[str, Any], env_ct: str, vis_ct: str) -> Tup
         f'    </body>'
     )
     act_xml = (
-        f'    <position name="{aname}" joint="{jname}" kp="1350" kv="22" '
-        f'ctrllimited="true" ctrlrange="0 {max_rad:.5f}" forcelimited="true" forcerange="-620 620"/>'
+        f'    <position name="{aname}" joint="{jname}" kp="1350" kv="26" '
+        f'ctrllimited="true" ctrlrange="0 {max_rad:.5f}" forcelimited="true" forcerange="-140 620"/>'
     )
     return body_xml, act_xml, aname
 
@@ -372,6 +372,17 @@ def build_arena_mjcf(stage_key: str) -> Tuple[str, str, List[str]]:
         slope_deg = -7.5
         slab_hz = 0.22
         hy_tang = r_out * math.tan(math.pi / n_sec) * 1.04
+        hy_in = r_in * math.tan(math.pi / n_sec) * 1.03
+
+        center_boxes: List[str] = []
+        for k in range(n_sec // 2):
+            yaw_c = k * (360.0 / n_sec)
+            center_boxes.append(
+                f'    <geom name="env_s1_center_deck_{k}" type="box" '
+                f'pos="0 0 -{DECK_HALF_THICK}" euler="0 0 {yaw_c:.3f}" '
+                f'size="{r_in + 0.01:.5f} {hy_in:.5f} {DECK_HALF_THICK}" '
+                f'rgba="0.74 0.56 0.36 1" friction="1.05 0.010 0.003" {env_ct}/>'
+            )
 
         slope_slabs: List[str] = []
         for k in range(n_sec):
@@ -389,7 +400,7 @@ def build_arena_mjcf(stage_key: str) -> Tuple[str, str, List[str]]:
         world_xml = (
             common_floor
             + f"""
-    <geom name="env_s1_center_deck" type="cylinder" pos="0 0 -{DECK_HALF_THICK}" size="2.46 {DECK_HALF_THICK}" rgba="0.74 0.56 0.36 1" friction="1.05 0.010 0.003" {env_ct}/>
+{chr(10).join(center_boxes)}
     <geom name="env_s1_pedestal" type="cylinder" pos="0 0 -1.18" size="1.45 0.68" rgba="0.15 0.18 0.23 1" {vis_ct}/>
 {chr(10).join(slope_slabs)}
 {chr(10).join(spring_bodies)}
@@ -452,7 +463,7 @@ def build_arena_mjcf(stage_key: str) -> Tuple[str, str, List[str]]:
     <geom name="env_s3_pedestal" type="cylinder" pos="0 0 -1.18" size="1.65 0.68" rgba="0.13 0.16 0.22 1" {vis_ct}/>
 
     <geom name="env_s3_apron_west" type="box" pos="{cw_xyz[0]:.5f} {cw_xyz[1]:.5f} {cw_xyz[2]:.5f}" quat="{qw_str}" size="{hxw:.5f} {apron_hy:.4f} {slab_hz:.4f}" rgba="0.46 0.22 0.28 1" friction="0.94 0.010 0.003" {env_ct}/>
-    <geom name="env_s3_apron_east" type="box" pos="{ce_xyz[0]:.5f} {ce_xyz[1]:.5f} {ce_xyz[2]:.5f}" quat="{qe_str}" size="{hxe:.5f} {apron_hy:.4f} {slab_hz:.4f}" rgba="0.46 0.22 0.28 1" friction="0.94 0.010 0.003" {env_ct}/>
+    <geom name="env_s3_apron_east" type="box" pos="{ce_xyz[0]:.5f} {ce_xyz[1]:.5f} {ce_xyz[2]:.5f}" quat="{qe_str}" size="{hxw:.5f} {apron_hy:.4f} {slab_hz:.4f}" rgba="0.46 0.22 0.28 1" friction="0.94 0.010 0.003" {env_ct}/>
 
     <!-- North/South Cliff Rim Warning Strips & Center Divider Line -->
     <geom name="env_s3_trim_n" type="box" pos="0 {half_y - 0.035:.3f} 0.004" size="{core_hx:.3f} 0.032 0.004" rgba="0.22 0.82 0.98 1" {vis_ct}/>
@@ -485,6 +496,71 @@ def create_hazard_runtime(stage_key: str) -> Dict[str, Any]:
     return state
 
 
+def _car_overlaps_spring_pad(
+    model: mujoco.MjModel,
+    data: mujoco.MjData,
+    gids: List[int],
+    sx: float,
+    sy: float,
+    sz: float,
+    cp: float,
+    sp_sin: float,
+) -> bool:
+    """
+    Return True as soon as ANY wheel, wedge, armor, or chassis geom of the car presses onto
+    ANY edge or interior region of the 0.96m x 0.88m physical spring plate!
+    """
+    box_t = int(mujoco.mjtGeom.mjGEOM_BOX)
+    cyl_t = int(mujoco.mjtGeom.mjGEOM_CYLINDER)
+    ux_x, ux_y = cp, sp_sin
+    uy_x, uy_y = -sp_sin, cp
+
+    for gid in gids:
+        gp = data.geom_xpos[gid]
+        dx = float(gp[0]) - sx
+        dy = float(gp[1]) - sy
+        if dx * dx + dy * dy > 1.35:
+            continue
+
+        gtype = int(model.geom_type[gid])
+        gsz = model.geom_size[gid]
+        if gtype == box_t:
+            hx, hy, hz = float(gsz[0]), float(gsz[1]), float(gsz[2])
+        elif gtype == cyl_t:
+            hx, hy, hz = float(gsz[0]), float(gsz[0]), float(gsz[1])
+        else:
+            r = float(gsz[0])
+            hx, hy, hz = r, r, r
+
+        gR = data.geom_xmat[gid].reshape(3, 3)
+        # Vertical half-extent in world Z (must be touching/skimming floor height z ≈ sz, not high airborne)
+        wz = abs(float(gR[2, 0])) * hx + abs(float(gR[2, 1])) * hy + abs(float(gR[2, 2])) * hz
+        z_bot = float(gp[2]) - wz
+        z_top = float(gp[2]) + wz
+        if z_bot > sz + 0.085 or z_top < sz - 0.06:
+            continue
+
+        # Exact projected half-extents along the plate's local X (ux) and local Y (uy) axes
+        c0x = abs(ux_x * float(gR[0, 0]) + ux_y * float(gR[1, 0]))
+        c1x = abs(ux_x * float(gR[0, 1]) + ux_y * float(gR[1, 1]))
+        c2x = abs(ux_x * float(gR[0, 2]) + ux_y * float(gR[1, 2]))
+        rx_loc = c0x * hx + c1x * hy + c2x * hz
+
+        c0y = abs(uy_x * float(gR[0, 0]) + uy_y * float(gR[1, 0]))
+        c1y = abs(uy_x * float(gR[0, 1]) + uy_y * float(gR[1, 1]))
+        c2y = abs(uy_x * float(gR[0, 2]) + uy_y * float(gR[1, 2]))
+        ry_loc = c0y * hx + c1y * hy + c2y * hz
+
+        x_loc = dx * ux_x + dy * ux_y
+        y_loc = dx * uy_x + dy * uy_y
+
+        # Plate physical rectangle is [-0.48, +0.48] x [-0.44, +0.44] (+0.48 is fixed ground hinge axle).
+        # Trigger immediately when at least ~1.5cm of the tire/wedge steps onto [-0.47, +0.41] x [-0.43, +0.43]!
+        if (x_loc + rx_loc >= -0.465) and (x_loc - rx_loc <= 0.41) and (abs(y_loc) - ry_loc <= 0.425):
+            return True
+    return False
+
+
 def step_arena_hazards(
     stage_key: str,
     model: mujoco.MjModel,
@@ -493,8 +569,17 @@ def step_arena_hazards(
     trap_act_ids: List[int],
     car_positions: Optional[Tuple[Tuple[float, float, float], Tuple[float, float, float]]] = None,
     hazard_state: Optional[Dict[str, Any]] = None,
+    car_geom_groups: Optional[Tuple[List[int], List[int]]] = None,
 ) -> List[Tuple[str, str]]:
-    """Update tactical hinged diagonal catapult plates deterministically."""
+    """
+    Update tactical hinged diagonal catapult plates deterministically.
+    Edge-Sensitive Trigger & Anti-Pinch Guarantee:
+      - Triggers immediately as soon as ANY ground-level tire, wedge, or hull geom steps onto any edge of the plate!
+      - Solid pad collision (`contype=1, conaffinity=6`) is ONLY active during the 0.22s upward catapult stroke!
+      - The instant the plate begins retracting back into the floor (`t_sec >= fire_until_t`), pad collision
+        switches to `0` (`contype=0, conaffinity=0`) while the continuous floor slab underneath supports cars,
+        so a retracting plate NEVER pinches, clamps, or traps any wheel/wedge/chassis!
+    """
     springs = STAGE_SPRINGS[stage_key]
     triggered_events: List[Tuple[str, str]] = []
     if not springs:
@@ -515,22 +600,34 @@ def step_arena_hazards(
             continue
         tag = sp["tag"]
         st = hazard_state[tag]
+        if "pad_gid" not in st:
+            st["pad_gid"] = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, f"trap_spring_{tag}_pad")
+            j_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_JOINT, f"j_trap_spring_{tag}")
+            st["j_qposadr"] = int(model.jnt_qposadr[j_id]) if j_id >= 0 else -1
+
+        pad_gid = int(st["pad_gid"])
+        j_qadr = int(st["j_qposadr"])
+        cur_qpos = float(data.qpos[j_qadr]) if j_qadr >= 0 else 0.0
+
         sx, sy, sz = float(sp["x"]), float(sp["y"]), float(sp["z"])
         phi = math.radians(float(sp["fling_yaw"]))
         cp, sp_sin = math.cos(phi), math.sin(phi)
         max_rad = float(sp["max_rad"])
 
-        if t_sec >= st["ready_t"]:
+        if t_sec >= st["ready_t"] and cur_qpos <= 0.035:
             dax, day = pa[0] - sx, pa[1] - sy
-            ax_loc = dax * cp + day * sp_sin
-            ay_loc = -dax * sp_sin + day * cp
-
             dbx, dby = pb[0] - sx, pb[1] - sy
-            bx_loc = dbx * cp + dby * sp_sin
-            by_loc = -dbx * sp_sin + dby * cp
+            if car_geom_groups is not None:
+                hit_a = _car_overlaps_spring_pad(model, data, car_geom_groups[0], sx, sy, sz, cp, sp_sin)
+                hit_b = _car_overlaps_spring_pad(model, data, car_geom_groups[1], sx, sy, sz, cp, sp_sin)
+            else:
+                ax_loc = dax * cp + day * sp_sin
+                ay_loc = -dax * sp_sin + day * cp
+                bx_loc = dbx * cp + dby * sp_sin
+                by_loc = -dbx * sp_sin + dby * cp
+                hit_a = (-0.47 <= ax_loc <= 0.41) and (abs(ay_loc) <= 0.43) and (-0.20 <= (pa[2] - sz) <= 0.44)
+                hit_b = (-0.47 <= bx_loc <= 0.41) and (abs(by_loc) <= 0.43) and (-0.20 <= (pb[2] - sz) <= 0.44)
 
-            hit_a = (-0.44 <= ax_loc <= 0.28) and (abs(ay_loc) <= 0.40) and (-0.20 <= (pa[2] - sz) <= 0.44)
-            hit_b = (-0.44 <= bx_loc <= 0.28) and (abs(by_loc) <= 0.40) and (-0.20 <= (pb[2] - sz) <= 0.44)
             if hit_a or hit_b:
                 st["fire_start_t"] = t_sec
                 st["fire_until_t"] = t_sec + 0.22
@@ -542,10 +639,15 @@ def step_arena_hazards(
                 if hit_b and (not hit_a or db < da):
                     triggered_events.append(("B", f"trap_spring_{tag}"))
 
-        if t_sec < st["fire_until_t"]:
+        is_launching_up = (t_sec < st["fire_until_t"])
+        if pad_gid >= 0:
+            model.geom_contype[pad_gid] = 1 if is_launching_up else 0
+            model.geom_conaffinity[pad_gid] = 6 if is_launching_up else 0
+
+        if is_launching_up:
             ctrl_val = max_rad
-        elif t_sec < st["fire_until_t"] + 0.36:
-            frac = 1.0 - (t_sec - st["fire_until_t"]) / 0.36
+        elif t_sec < st["fire_until_t"] + 0.34:
+            frac = 1.0 - (t_sec - st["fire_until_t"]) / 0.34
             ctrl_val = max(0.0, max_rad * frac)
         else:
             ctrl_val = 0.0

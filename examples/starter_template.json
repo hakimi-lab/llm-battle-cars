@@ -3,7 +3,7 @@
     "model_name": "Template-Model",
     "car_name": "Starter Prototype",
     "slogan": "Minimal syntax reference build.",
-    "design_concept": "Minimal baseline configuration demonstrating 4-wheel differential motor formulas, 'let' helper bindings, and basic cliff/cannon rules.",
+    "design_concept": "Minimal baseline configuration demonstrating 4-wheel differential motor formulas, 360-deg turret rotation ('cannon_yaw_deg'), 'let' helper bindings, and basic cliff/cannon rules.",
     "primary_color": "#475569",
     "secondary_color": "#94A3B8",
     "accent_color": "#38BDF8",
@@ -47,6 +47,7 @@
         "action": {
           "left": "clamp(0.85 - turn_center, -1.0, 1.0)",
           "right": "clamp(0.85 + turn_center, -1.0, 1.0)",
+          "cannon_yaw_deg": "enemy_angle_deg",
           "cannon": false
         }
       },
@@ -59,14 +60,16 @@
         "action": {
           "left": "clamp(-0.80 + 0.40 * unstick_sign, -1.0, 1.0)",
           "right": "clamp(-0.80 - 0.40 * unstick_sign, -1.0, 1.0)",
-          "cannon": "cannon_ready and abs_enemy_angle_deg < 18"
+          "cannon_yaw_deg": "enemy_angle_deg",
+          "cannon": "cannon_ready and abs_cannon_enemy_angle_deg < 12"
         }
       }
     ],
     "default_action": {
       "left": "clamp(0.82 * max(0.15, cos_deg(enemy_angle_deg)) - turn_enemy, -1.0, 1.0)",
       "right": "clamp(0.82 * max(0.15, cos_deg(enemy_angle_deg)) + turn_enemy, -1.0, 1.0)",
-      "cannon": "cannon_ready and has_line_of_sight and abs_enemy_angle_deg < 15"
+      "cannon_yaw_deg": "enemy_angle_deg",
+      "cannon": "cannon_ready and has_line_of_sight and abs_cannon_enemy_angle_deg < 10"
     }
   }
 }

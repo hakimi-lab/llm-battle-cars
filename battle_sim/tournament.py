@@ -76,6 +76,8 @@ def export_beauty_turntable_bundle(spec: Dict[str, Any], out_prefix: Path, secon
                 data.qpos[qadr] = 1.45 * math.sin(math.pi * (f - 75) / 30.0)
             elif "pist_j" in jname and 95 <= f <= 122:
                 data.qpos[qadr] = 0.30 * math.sin(math.pi * (f - 95) / 27.0)
+            elif "turret_j" in jname:
+                data.qpos[qadr] = 0.62 * math.sin(4.0 * math.pi * f / float(num_frames))
         mujoco.mj_forward(model, data)
         xpos_frames.append(data.geom_xpos.astype(np.float32).copy())
         xmat_frames.append(data.geom_xmat.astype(np.float32).copy())

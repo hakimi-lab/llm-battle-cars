@@ -255,6 +255,7 @@ class VehicleController:
         self.cannons: List[Dict[str, Any]] = []
         for cm in car_bundle.get("cannons_meta", []):
             bid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, cm["body_name"])
+            tur_aid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_ACTUATOR, cm.get("turret_act_name", ""))
             mocap_ids = []
             for bb_name in cm["bolt_body_names"]:
                 bb_id = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, bb_name)
@@ -263,6 +264,7 @@ class VehicleController:
             if bid >= 0 and mocap_ids:
                 self.cannons.append({
                     "body_id": bid,
+                    "turret_act_id": tur_aid,
                     "mode": cm["mode"],
                     "cooldown": float(cm["cooldown"]),
                     "bolt_speed": float(cm["bolt_speed"]),
@@ -270,6 +272,7 @@ class VehicleController:
                     "recoil_impulse": float(cm["recoil_impulse"]),
                     "bolt_damage": float(cm["bolt_damage"]),
                     "muzzle_local": np.array(cm["muzzle_local"], dtype=np.float64),
+                    "dir_local": np.array(cm.get("dir_local", [1.0, 0.0, 0.0]), dtype=np.float64),
                     "mocap_ids": mocap_ids,
                     "ready_t": 0.15,
                     "slot_idx": 0,
@@ -298,6 +301,7 @@ class VehicleController:
             "piston_punches": 0,
             "thruster_burn_sec": 0.0,
             "spinner_active_sec": 0.0,
+            "turret_slewed_deg": 0.0,
             "total_stalled_sec": 0.0,
             "total_inverted_sec": 0.0,
             "total_distance_m": 0.0,
@@ -384,6 +388,24 @@ class VehicleController:
         portal_angle_deg = _local_angle_deg(fwd_xy, left_xy, arena_q["portal_dir"])
 
         cannon_ready = any(t_sec >= c["ready_t"] for c in self.cannons)
+        if self.cannons:
+            c0 = self.cannons[0]
+            c0_R = data.xmat[c0["body_id"]].reshape(3, 3)
+            cd0 = c0_R @ c0["dir_local"]
+            cfn = math.hypot(float(cd0[0]), float(cd0[1]))
+            cfwd_xy = (float(cd0[0]) / cfn, float(cd0[1]) / cfn) if cfn > 1e-5 else fwd_xy
+            cleft_xy = (-cfwd_xy[1], cfwd_xy[0])
+            cannon_world_yaw_deg = math.degrees(math.atan2(cfwd_xy[1], cfwd_xy[0]))
+            cannon_yaw_deg = _local_angle_deg(fwd_xy, left_xy, cfwd_xy)
+            cpx, cpy = float(data.xpos[c0["body_id"]][0]), float(data.xpos[c0["body_id"]][1])
+            cdx, cdy = ex_w - cpx, ey_w - cpy
+            cd_en = math.hypot(cdx, cdy)
+            cedir_xy = (cdx / cd_en, cdy / cd_en) if cd_en > 1e-5 else edir_xy
+            cannon_enemy_angle_deg = _local_angle_deg(cfwd_xy, cleft_xy, cedir_xy)
+        else:
+            cannon_world_yaw_deg = self_yaw_deg
+            cannon_yaw_deg = 0.0
+            cannon_enemy_angle_deg = enemy_angle_deg
 
         p_eye = np.array([sx_w, sy_w, sz_w + 0.14], dtype=np.float64)
         v_to_e = np.array([ex_w, ey_w, ez_w + 0.12], dtype=np.float64) - p_eye
@@ -479,6 +501,11 @@ class VehicleController:
             "enemy_portal_dist": round(float(arena_q["enemy_portal_dist"]), 4),
             "enemy_portal_out_yaw_deg": round(float(arena_q["enemy_portal_out_yaw_deg"]), 2),
             "enemy_portal_ready": bool(arena_q["enemy_portal_ready"]),
+
+            "cannon_yaw_deg": round(cannon_yaw_deg, 2),
+            "cannon_world_yaw_deg": round(cannon_world_yaw_deg, 2),
+            "cannon_enemy_angle_deg": round(cannon_enemy_angle_deg, 2),
+            "abs_cannon_enemy_angle_deg": round(abs(cannon_enemy_angle_deg), 2),
 
             "has_line_of_sight": has_los,
             "cannon_ready": cannon_ready,
@@ -608,7 +635,39 @@ class VehicleController:
         for aid, stroke in self.piston_acts:
             data.ctrl[aid] = stroke if pist_firing else 0.0
 
-        # 6. Ranged Energy Cannons (`"cannon"` or `"fire_cannon"`)
+        # 6. 360-deg Motorized Turret Slew + Ranged Energy Cannons
+        if self.cannons:
+            R_root = data.xmat[self.root_body_id].reshape(3, 3)
+            rfx, rfy = float(R_root[0, 0]), float(R_root[1, 0])
+            rfn = math.hypot(rfx, rfy)
+            rfwd_xy = (rfx / rfn, rfy / rfn) if rfn > 1e-5 else (1.0, 0.0)
+            rleft_xy = (-rfwd_xy[1], rfwd_xy[0])
+
+            yaw_fn = chosen_act.get("cannon_yaw_deg", chosen_act.get("turret_yaw_deg"))
+            turn_fn = chosen_act.get("cannon_turn", chosen_act.get("turret_turn"))
+            target_yaw_deg = float(yaw_fn(env)) if yaw_fn is not None else None
+            direct_turn = clamp(float(turn_fn(env)), -1.0, 1.0) if turn_fn is not None else None
+
+            for c in self.cannons:
+                taid = c["turret_act_id"]
+                if taid < 0:
+                    continue
+                cR = data.xmat[c["body_id"]].reshape(3, 3)
+                z_sign = 1.0 if float(cR[2, 2]) >= 0.0 else -1.0
+                if direct_turn is not None and target_yaw_deg is None:
+                    w_cmd = direct_turn * 6.0 * z_sign
+                else:
+                    tgt_deg = target_yaw_deg if target_yaw_deg is not None else 0.0
+                    cd = cR @ c["dir_local"]
+                    cfn = math.hypot(float(cd[0]), float(cd[1]))
+                    cfwd_xy = (float(cd[0]) / cfn, float(cd[1]) / cfn) if cfn > 1e-5 else rfwd_xy
+                    cur_rel_deg = _local_angle_deg(rfwd_xy, rleft_xy, cfwd_xy)
+                    err_deg = ((tgt_deg - cur_rel_deg + 180.0) % 360.0) - 180.0
+                    w_cmd = clamp(math.radians(err_deg) * 14.0, -6.0, 6.0) * z_sign
+                data.ctrl[taid] = w_cmd
+                if record_stats:
+                    self.actuator_exec["turret_slewed_deg"] += math.degrees(abs(w_cmd)) * dt
+
         c_fn = chosen_act.get("cannon", chosen_act.get("fire_cannon"))
         want_cannon = bool(c_fn(env)) if c_fn is not None else False
         if want_cannon and self.cannons:
@@ -620,7 +679,7 @@ class VehicleController:
                     cR = data.xmat[cb_id].reshape(3, 3)
                     cpos = data.xpos[cb_id]
                     muz_pos = cpos + cR @ c["muzzle_local"]
-                    muz_dir = cR[:, 0].copy()
+                    muz_dir = (cR @ c["dir_local"]).copy()
                     dn = float(np.linalg.norm(muz_dir))
                     if dn > 1e-6:
                         muz_dir /= dn
@@ -801,6 +860,7 @@ class VehicleController:
             in_flight = max(0, tot_fired - tot_hit - tot_ter_blk - tot_miss)
             act_report["energy_cannon"] = {
                 "installed_count": len(self.cannons),
+                "turret_slewed_deg": round(float(self.actuator_exec["turret_slewed_deg"]), 1),
                 "shots_fired": tot_fired,
                 "hit_enemy_hull": tot_hit,
                 "blocked_by_slope_crest": tot_ter_blk,

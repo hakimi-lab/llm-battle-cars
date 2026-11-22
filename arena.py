@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-LLM Battle-Cars — Unified Contestant & Tournament CLI (`arena.py`, v3.1).
+LLM Battle-Cars — Unified Contestant & Tournament CLI (`arena.py`, v3.2).
 
 Contestant Commands:
   python arena.py parts
@@ -13,13 +13,13 @@ Contestant Commands:
       Render a 4-view 3D shaded blueprint image (Isometric/Side/Front/Top) to inspect vehicle layout (0 credits).
 
   python arena.py preview-arena [--stage all|1|2|3] [--out previews/]
-      Render 3D shaded & top-down tactical blueprints of the 3 BO3 slope & spring arenas (0 credits).
+      Render 3D shaded & top-down tactical blueprints of the 3 BO3 tactical arenas (0 credits).
 
   python arena.py status
       Show remaining simulation test credits out of 120 (0 credits).
 
   python arena.py test path/to/my_car.json [--opponent custom_opponents/enemy.json|dummy_rusher|dummy_spinner|dummy_flipper|dummy_fortress|dummy_ranger|mirror] [--stage bo3|1|2|3] [--swap-sides]
-      Run deterministic 360Hz MuJoCo combat simulation against built-in bots OR custom opponents you design yourself!
+      Run deterministic 360Hz MuJoCo combat simulation (30s rounds) against built-in bots OR custom opponents!
       Cost: 1 credit for a single stage (1, 2, or 3), 3 credits for `--stage bo3`.
       Hard limit: 120 simulation credits total per workspace.
 
@@ -74,8 +74,8 @@ def _load_car_json(path_str: str) -> Tuple[Path, Dict[str, Any]]:
 def cmd_parts(_args: argparse.Namespace) -> int:
     print("=" * 86)
     print(
-        f"LLM BATTLE-CARS v3.0 CATALOG  (Max {MAX_FUNCTIONAL_PARTS} parts | Max {MAX_BUILD_POINTS} pts | "
-        f"Max {MAX_ACTIVE_WEAPONS} active weapons | Max {MAX_ENERGY_CANNONS} cannons | Unrestricted LxWxH!)"
+        f"LLM BATTLE-CARS v3.2 CATALOG  (Max {MAX_FUNCTIONAL_PARTS} parts | Max {MAX_BUILD_POINTS} pts | "
+        f"Max {MAX_ACTIVE_WEAPONS} active weapons | Max {MAX_ENERGY_CANNONS} 360°-turret cannons | Unrestricted LxWxH!)"
     )
     print("=" * 86)
     for ptype, info in PARTS_CATALOG.items():
@@ -85,7 +85,7 @@ def cmd_parts(_args: argparse.Namespace) -> int:
     print(f"  - Shapes   : {', '.join(DECO_SHAPES)}")
     print(f"  - Materials: {', '.join(VALID_MATERIALS)}")
     print(f"  - Mounts   : {', '.join(MOUNT_ANCHORS.keys())}")
-    print("\nThree BO3 Slope & Tactical-Spring Arenas:")
+    print("\nThree Distinct BO3 Tactical Arenas (30s/round, Catapults, Ridge Vaults & Quantum Portals):")
     for sk in ARENA_ORDER:
         am = ARENA_META[sk]
         print(f"  - Stage {am['stage_id']} ({sk} / {am['name_zh']}): {am['description']}")

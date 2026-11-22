@@ -245,6 +245,10 @@ def run_single_match(
 
     xpos_frames: List[np.ndarray] = []
     xmat_frames: List[np.ndarray] = []
+    live_scores_a_frames: List[List[float]] = []
+    live_scores_b_frames: List[List[float]] = []
+    last_live_a: List[float] = [60.0, 25.0, 15.0, 20.0]
+    last_live_b: List[float] = [60.0, 25.0, 15.0, 20.0]
 
     active_bolts: List[Dict[str, Any]] = []
     zero_torque = np.zeros(3, dtype=np.float64)
@@ -278,6 +282,7 @@ def run_single_match(
                 trap_act_ids,
                 car_positions=(pa_xyz, pb_xyz),
                 hazard_state=hazard_state,
+                car_geom_groups=(solid_a_gids, solid_b_gids),
             )
             if trig_events:
                 frame_spring_fired = True
@@ -633,6 +638,9 @@ def run_single_match(
             foley_events.append({"frame": frame_idx, "kind": "floor_crash", "strength": 1.6})
 
         if ko_frame is not None:
+            if record_replay:
+                live_scores_a_frames.append(last_live_a)
+                live_scores_b_frames.append(last_live_b)
             continue
 
         frame_t = (frame_idx + 1) / float(FPS)
@@ -653,6 +661,7 @@ def run_single_match(
                 "dist": round(float(sens_a["enemy_dist"]), 2),
                 "active_rule": ctrl_a.active_rule_name,
                 "wheel_cmd": [round(ctrl_a.last_wheel_cmd[0], 2), round(ctrl_a.last_wheel_cmd[1], 2)],
+                "turret_yaw_deg": round(float(sens_a.get("cannon_yaw_deg", 0.0)), 1),
                 "speed_mps": round(float(sens_a["self_speed"]), 2),
                 "edge_dist_m": round(float(sens_a["edge_dist"]), 2),
                 "spring_dist_m": round(float(sens_a["spring_dist"]), 2),
@@ -715,6 +724,23 @@ def run_single_match(
                 immob_inverted_sec_b += 1.0 / FPS
             else:
                 immob_inverted_sec_b = 0.0
+
+        cur_f = float(frame_idx + 1)
+        raw_da = imp_a + flips_inflicted_a * 12.0 + spring_herds_by_a * 8.0
+        raw_db = imp_b + flips_inflicted_b * 12.0 + spring_herds_by_b * 8.0
+        d_sum = raw_da + raw_db
+        s_dmg_a = (50.0 * raw_da / d_sum) if d_sum > 1e-4 else 25.0
+        s_dmg_b = (50.0 * raw_db / d_sum) if d_sum > 1e-4 else 25.0
+        a_sum = aggression_a + aggression_b
+        s_agg_a = (30.0 * aggression_a / a_sum) if a_sum > 1e-4 else 15.0
+        s_agg_b = (30.0 * aggression_b / a_sum) if a_sum > 1e-4 else 15.0
+        s_stb_a = 20.0 * (upright_frames_a / cur_f)
+        s_stb_b = 20.0 * (upright_frames_b / cur_f)
+        last_live_a = [round(s_dmg_a + s_agg_a + s_stb_a, 2), round(s_dmg_a, 2), round(s_agg_a, 2), round(s_stb_a, 2)]
+        last_live_b = [round(s_dmg_b + s_agg_b + s_stb_b, 2), round(s_dmg_b, 2), round(s_agg_b, 2), round(s_stb_b, 2)]
+        if record_replay:
+            live_scores_a_frames.append(last_live_a)
+            live_scores_b_frames.append(last_live_b)
 
         # Check Ring-Out KO!
         fell_a = za < -0.45
@@ -937,6 +963,8 @@ def run_single_match(
             "geom_info": geom_info,
             "xpos": np.stack(xpos_frames, axis=0),
             "xmat": np.stack(xmat_frames, axis=0),
+            "live_scores_a": np.array(live_scores_a_frames, dtype=np.float32),
+            "live_scores_b": np.array(live_scores_b_frames, dtype=np.float32),
         }
 
     return result
@@ -949,7 +977,13 @@ def save_replay_bundle(match_result: Dict[str, Any], out_prefix: Path) -> Path:
     npz_path = out_prefix.with_suffix(".npz")
     json_path = out_prefix.with_suffix(".json")
 
-    np.savez_compressed(npz_path, xpos=rep["xpos"], xmat=rep["xmat"])
+    np.savez_compressed(
+        npz_path,
+        xpos=rep["xpos"],
+        xmat=rep["xmat"],
+        live_scores_a=rep["live_scores_a"],
+        live_scores_b=rep["live_scores_b"],
+    )
     meta_doc = {
         "fps": rep["fps"],
         "ko_frame": rep["ko_frame"],

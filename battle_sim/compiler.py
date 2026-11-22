@@ -670,16 +670,34 @@ def build_vehicle_xml(
                 cmode = "standard"
             mcfg = CANNON_MODES[cmode]
             pitch_deg = clamp(float(params.get("pitch_deg", 0.0)), -15.0, 24.0)
+            p_rad = math.radians(pitch_deg)
+            cp_el, sp_el = math.cos(p_rad), math.sin(p_rad)
             R_pitch = _euler_deg_to_mat(0.0, -pitch_deg, 0.0)
-            R_tot = R @ R_pitch
-            q_can = _mat_to_quat_str(R_tot)
+            q_pitch_local = _mat_to_quat_str(R_pitch)
+
+            # Rotate barrel + core + muzzle vectors by pitch_deg inside the horizontal-yaw turret body
+            R_core = R_pitch @ _euler_deg_to_mat(0.0, 90.0, 0.0)
+            q_core_local = _mat_to_quat_str(R_core)
+
+            def _pvec(lx: float, ly: float, lz: float) -> str:
+                v = R_pitch @ np.array([lx, ly, lz], dtype=np.float64)
+                return _vec_str(v)
+
+            j_tur = f"{bname}_turret_j"
+            a_tur = f"act_{bname}_turret"
+            actuators_xml.append(
+                f'    <velocity name="{a_tur}" joint="{j_tur}" kv="6.5" ctrllimited="true" ctrlrange="-6.0 6.0" forcelimited="true" forcerange="-18.0 18.0"/>'
+            )
+            actuators_meta.append({"name": a_tur, "kind": "cannon_turret", "part_id": pid})
 
             c_rgb = parse_hex_color(part.get("color"), (0.08, 0.92, 1.0) if prefix == "A" else (1.0, 0.36, 0.14))
+            g_ring = f"{bname}_ecannon_ring"
             g_breech = f"{bname}_ecannon_breech"
             g_rail_l = f"{bname}_ecannon_rail_l"
             g_rail_r = f"{bname}_ecannon_rail_r"
             g_core = f"{bname}_ecannon_core"
             g_muz = f"{bname}_ecannon_muzzle"
+            register_style(g_ring, "brass", (0.30, 0.35, 0.44), "metallic")
             register_style(g_breech, "steel", (0.22, 0.26, 0.34), "metallic")
             register_style(g_rail_l, "steel", (0.46, 0.52, 0.60), "metallic")
             register_style(g_rail_r, "steel", (0.46, 0.52, 0.60), "metallic")
@@ -704,24 +722,31 @@ def build_vehicle_xml(
 
             cannons_meta.append({
                 "body_name": bname,
+                "turret_joint_name": j_tur,
+                "turret_act_name": a_tur,
                 "mode": cmode,
                 "cooldown": mcfg["cooldown"],
                 "bolt_speed": mcfg["speed"],
                 "bolt_impulse": mcfg["impulse"],
                 "recoil_impulse": mcfg["recoil"],
                 "bolt_damage": mcfg["damage"],
-                "muzzle_local": [0.34, 0.0, 0.0],
+                "muzzle_local": [round(0.34 * cp_el, 5), 0.0, round(0.34 * sp_el, 5)],
+                "dir_local": [round(cp_el, 6), 0.0, round(sp_el, 6)],
                 "bolt_body_names": bolt_body_names,
                 "part_id": pid,
             })
             return (
-                f'{indent}<body name="{bname}" pos="{_vec_str(pos)}" quat="{q_can}">\n'
-                f'{indent}  <geom name="{g_breech}" type="box" pos="0.02 0 0" size="0.10 0.075 0.052" density="340" rgba="0.22 0.26 0.34 1" {ct_attr}/>\n'
-                f'{indent}  <geom name="{g_rail_l}" type="box" pos="0.17 0.052 0" size="0.16 0.016 0.024" density="300" rgba="0.46 0.52 0.60 1" {ct_attr}/>\n'
-                f'{indent}  <geom name="{g_rail_r}" type="box" pos="0.17 -0.052 0" size="0.16 0.016 0.024" density="300" rgba="0.46 0.52 0.60 1" {ct_attr}/>\n'
-                f'{indent}  <geom name="{g_core}" type="cylinder" pos="0.15 0 0" euler="0 90 0" size="0.026 0.13" mass="0.2" rgba="{_rgba_str(c_rgb)}" {vis_attr}/>\n'
-                f'{indent}  <geom name="{g_muz}" type="cylinder" pos="0.31 0 0" euler="0 90 0" size="0.048 0.012" mass="0.1" rgba="{_rgba_str(c_rgb)}" {vis_attr}/>'
+                f'{indent}<body name="{bname}_mount" pos="{_vec_str(pos)}" quat="{qstr}">\n'
+                f'{indent}  <geom name="{g_ring}" type="cylinder" pos="0 0 -0.022" size="0.080 0.012" mass="0.05" rgba="0.30 0.35 0.44 1" {vis_attr}/>\n'
+                f'{indent}  <body name="{bname}" pos="0 0 0">\n'
+                f'{indent}    <joint name="{j_tur}" type="hinge" axis="0 0 1" limited="false" damping="1.8" armature="0.032"/>\n'
+                f'{indent}    <geom name="{g_breech}" type="box" pos="{_pvec(0.02, 0.0, 0.0)}" quat="{q_pitch_local}" size="0.10 0.075 0.052" density="340" rgba="0.22 0.26 0.34 1" {ct_attr}/>\n'
+                f'{indent}    <geom name="{g_rail_l}" type="box" pos="{_pvec(0.17, 0.052, 0.0)}" quat="{q_pitch_local}" size="0.16 0.016 0.024" density="300" rgba="0.46 0.52 0.60 1" {ct_attr}/>\n'
+                f'{indent}    <geom name="{g_rail_r}" type="box" pos="{_pvec(0.17, -0.052, 0.0)}" quat="{q_pitch_local}" size="0.16 0.016 0.024" density="300" rgba="0.46 0.52 0.60 1" {ct_attr}/>\n'
+                f'{indent}    <geom name="{g_core}" type="cylinder" pos="{_pvec(0.15, 0.0, 0.0)}" quat="{q_core_local}" size="0.026 0.13" mass="0.2" rgba="{_rgba_str(c_rgb)}" {vis_attr}/>\n'
+                f'{indent}    <geom name="{g_muz}" type="cylinder" pos="{_pvec(0.31, 0.0, 0.0)}" quat="{q_core_local}" size="0.048 0.012" mass="0.1" rgba="{_rgba_str(c_rgb)}" {vis_attr}/>'
                 f'{deco_block}\n'
+                f'{indent}  </body>\n'
                 f'{indent}</body>'
             )
 

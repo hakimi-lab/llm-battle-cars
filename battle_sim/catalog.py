@@ -27,7 +27,7 @@ MAX_DECO_PARTS = 10
 MAX_SIM_CREDITS = 120    # 1 single stage = 1 credit; 1 full BO3 = 3 credits
 
 MAX_STRATEGY_VARS = 20
-MAX_STRATEGY_LET = 28
+MAX_STRATEGY_LET = 36
 
 # Minimum non-degenerate physical dimensions for core chassis [Length_X, Width_Y, Height_Z] in meters.
 # NO upper Length/Width/Height cap! Larger dimensions naturally add mass & rotational inertia.
@@ -37,8 +37,8 @@ CHASSIS_MIN_DIMS = (0.06, 0.06, 0.05)
 PHYSICS_DT = 1.0 / 360.0
 SUBSTEPS = 12
 FPS = 30
-MATCH_DURATION_SEC = 15.0
-MATCH_FRAMES = int(MATCH_DURATION_SEC * FPS)  # 450 frames
+MATCH_DURATION_SEC = 30.0
+MATCH_FRAMES = int(MATCH_DURATION_SEC * FPS)  # 900 frames
 POST_KO_FRAMES = 39                           # +1.30s fall/impact tail
 
 MOUNT_ANCHORS: Dict[str, Tuple[Tuple[float, float, float], float]] = {
@@ -134,6 +134,11 @@ VALID_NUMERIC_SENSORS = frozenset({
     "enemy_portal_y",
     "enemy_portal_dist",
     "enemy_portal_out_yaw_deg",
+    # 360-deg rotatable energy_cannon turret sensors (0 if no cannon installed)
+    "cannon_yaw_deg",
+    "cannon_world_yaw_deg",
+    "cannon_enemy_angle_deg",
+    "abs_cannon_enemy_angle_deg",
     # Incoming projectile, fuel & clock
     "incoming_bolt_dist",
     "incoming_bolt_angle_deg",
@@ -170,6 +175,10 @@ VALID_ACTION_KEYS = frozenset({
     "piston",
     "cannon",
     "fire_cannon",
+    "cannon_yaw_deg",
+    "turret_yaw_deg",
+    "cannon_turn",
+    "turret_turn",
     "thruster",
 })
 
@@ -258,8 +267,8 @@ PARTS_CATALOG: Dict[str, Dict[str, Any]] = {
     "energy_cannon": {
         "cost": 18,
         "category": "weapon",
-        "name_zh": "远程能量炮",
-        "summary": "Ranged twin-rail plasma cannon (rapid/standard/heavy modes, max 2 per car). Fires 3D energy bolts with physical knockback & recoil; 30% reduced by armor_shield/wedge.",
+        "name_zh": "远程能量炮（360°旋转云台）",
+        "summary": "360-deg motorized turret twin-rail plasma cannon (rapid/standard/heavy modes, max 2 per car, ~340 deg/s slew via 'cannon_yaw_deg' or 'cannon_turn'). Fires 3D bolts with upward shockwave knockback & recoil.",
         "defaults": {"mode": "standard", "pitch_deg": 0.0},
     },
     "thruster": {
@@ -647,6 +656,10 @@ def _lint_action_dict(
             used_triggers.add("energy_cannon")
             if is_explicit_rule and "energy_cannon" not in installed_types:
                 warnings.append(f"{ctx} controls '{c_k}', but this car has NO 'energy_cannon' part installed.")
+
+    for t_k in ("cannon_yaw_deg", "turret_yaw_deg", "cannon_turn", "turret_turn"):
+        if t_k in act and is_explicit_rule and "energy_cannon" not in installed_types:
+            warnings.append(f"{ctx} controls '{t_k}', but this car has NO 'energy_cannon' part installed.")
 
 
 def _lint_strategy_block(

@@ -1,13 +1,13 @@
-# LLM Battle-Cars — Complete Single-File Specification (`SPECIFICATION.md`, v3.1)
+# LLM Battle-Cars — Complete Single-File Specification (`SPECIFICATION.md`, v3.2)
 
 Every contestant AI submits **EXACTLY ONE UTF-8 `.json` file** (e.g., `submissions/your_model.json`).
 
 That single JSON file defines:
 1. **`meta`**: Model identity, vehicle name, slogan, design concept, and hex color palette.
 2. **`chassis`**: Core hull dimensions `[length_x, width_y, height_z]` (**no upper size limit!**) and material density.
-3. **`parts`**: Up to **14 functional 3D parts** within **100 Build Points** across **13 part types**.
+3. **`parts`**: Up to **14 functional 3D parts** within **100 Build Points** across **13 part types** (including `360°` motorized-turret `energy_cannon`!).
 4. **`decorations`**: Up to **10 free (`0` Build Points) 3D geometric pieces** for the **Vehicle Aesthetics Evaluation (`战车外形评价环节`)** — visual theme and style are 100% open and self-determined by each model.
-5. **`strategy`**: **100% model-authored real-time control laws** (`120 Hz`). There are **NO** pre-built driving modes (`no "drive": "pursue"`, `no "dodge"`, `no "retreat"`). You write your own differential wheel commands (`"left"`, `"right"`) and weapon triggers directly using math/boolean formulas, `"let"` helper bindings, stateful `"vars"`, and `"rules"` over **39 raw physical sensors**!
+5. **`strategy`**: **100% model-authored real-time control laws** (`120 Hz`). There are **NO** pre-built driving or auto-aim modes (`no "drive": "pursue"`, `no "dodge"`, `no "auto_aim"`). You write your own differential wheel commands (`"left"`, `"right"`), optional `360°` turret rotation (`"cannon_yaw_deg"` / `"cannon_turn"`), and weapon triggers directly using math/boolean formulas, `"let"` helper bindings (up to `36`), stateful `"vars"`, and `"rules"` over **59 raw physical sensors**!
 
 ---
 
@@ -102,7 +102,7 @@ Every item in `"parts"` attaches to `"parent": "chassis"` (default) OR `"parent"
 9. **`flipper` (`16 pts`, Active Weapon)** — Pneumatic upward launch spatula (`72°` snap, `1.30s` cooldown; `params`: `{"length": 0.22..0.68, "width": 0.14..0.56}`).
 10. **`hammer` (`15 pts`, Active Weapon)** — Overhead pneumatic warhammer (`115°` downward slam, `1.15s` cooldown; `params`: `{"arm_length": 0.24..0.76, "head_size": 0.07..0.22}`).
 11. **`piston_punch` (`15 pts`, Active Weapon)** — Linear telescoping ram (`0.24s` punch, `1.10s` cooldown; `params`: `{"stroke": 0.20..0.68, "head_width": 0.09..0.42}`).
-12. **`energy_cannon` (`18 pts`, Active Weapon, MAX 2 PER CAR)** — Ranged twin-rail electromagnetic/plasma cannon (`params`: `{"mode": "rapid"|"standard"|"heavy", "pitch_deg": -15..24}`), delivering upward-angled (`~20°`) shockwave knockback (and bolts can warp through Stage 3 portals!):
+12. **`energy_cannon` (`18 pts`, Active Weapon, MAX 2 PER CAR)** — **360° Motorized Horizontal Turret** twin-rail electromagnetic/plasma cannon (`params`: `{"mode": "rapid"|"standard"|"heavy", "pitch_deg": -15..24}`). Mounted on an unbounded continuous `360°` rotary gimbal (`max slew rate 6.0 rad/s ≈ 343°/s`), allowing you to aim & fire in any direction independently of hull movement via `"cannon_yaw_deg"` or `"cannon_turn"` (if omitted, holds `0°` forward along the mount; barrel `pitch_deg` stays elevated across all `360°`). Delivers upward-angled (`~20°`) shockwave knockback, and bolts warp through Stage 3 portals!
     - `"rapid"`: `0.70s` cooldown, `17.0 m/s` bolt speed, `19.5 N·s` impulse, `3.2 N·s` recoil, `8.5` damage weight
     - `"standard"`: `1.02s` cooldown, `15.0 m/s` bolt speed, `30.0 N·s` impulse, `5.0 N·s` recoil, `13.0` damage weight
     - `"heavy"`: `1.45s` cooldown, `13.0 m/s` bolt speed, `44.0 N·s` impulse, `7.5 N·s` recoil, `18.5` damage weight *(twin heavy volley knocks a 21kg light car airborne ~2.0m!)*
@@ -118,16 +118,16 @@ Every item in `"parts"` attaches to `"parent": "chassis"` (default) OR `"parent"
 
 ---
 
-## 6. The 3 Distinct Snag-Free BO3 Arenas (Catapults, Ridge Vaults & Portals)
+## 6. The 3 Distinct Snag-Free BO3 Arenas, `30.0s` Round Timer & 100-Point Scorecard
 
 All 3 stages have **zero solid pillars, zero narrow bridges, and zero overhead pendulums** — each stage features a completely distinct geometry and interactive tactical mechanism:
 
 1. **Stage 1 — `spring_arena` (`stage_id = 1`, 四象弹射·斜坡擂台)**:
    - Open `6.90m` circular arena (`r = 3.45m` 360° cliff): flat center (`r = 0..2.45m`) + **`-7.5°` downward-cambered danger slope** (`r = 2.45..3.45m`).
-   - **4 Hinged Diagonal Catapult Plates** (`0.96m × 0.88m`, `-2.5mm` recessed idle) at `(±1.18, ±1.18)` (`fling_yaw = ±45° / ±135°`, `2.1s` cooldown): outer edge is hinged on the floor; stepping onto a plate snaps the inner edge up `56°`, hurling cars diagonally toward the corner danger slope! Spawns: `(-1.95, 0)` vs `(+1.95, 0)`.
+   - **4 Edge-Sensitive Hinged Diagonal Catapult Plates** (`0.96m × 0.88m`, `-2.5mm` recessed idle) at `(±1.18, ±1.18)` (`fling_yaw = ±45° / ±135°`, `2.1s` cooldown): outer edge is hinged on the floor; as soon as **any solid tire, wedge, armor, or hull edge** touches the plate surface, the inner edge snaps up `56°` to hurl the vehicle diagonally toward the corner danger slope, then retracts with zero collision (`contype=0`) so it never pinches wheels! Spawns: `(-1.95, 0)` vs `(+1.95, 0)`.
 2. **Stage 2 — `camelback_ridge` (`stage_id = 2`, 双峰飞坡·弹力竞技场)**:
    - Open `7.20m × 5.90m` (`x in [-3.60, +3.60], y in [-2.95, +2.95]`) plateau bisected by a full-width **`+0.24m` Central Tabletop Ridge Hill** (`x in [-0.52, +0.52]` crest, smooth `11°` slopes `x in [-1.75, +1.75]`).
-   - **2 Hilltop Cliff-Ejector Hinged Catapults** at `(0.0, ±1.18)` (`fling_yaw = ±90°`) + **2 Slope-Foot Vault Hinged Catapults** at `(-2.28, -1.35)` (`+18°`) & `(+2.28, +1.35)` (`-162°`) that vault cars diagonally over the central ridge! Spawns: `(-2.45, 0)` vs `(+2.45, 0)`.
+   - **2 Hilltop Cliff-Ejector Edge-Sensitive Catapults** at `(0.0, ±1.18)` (`fling_yaw = ±90°`) + **2 Slope-Foot Vault Catapults** at `(-2.28, -1.35)` (`+18°`) & `(+2.28, +1.35)` (`-162°`) that vault cars diagonally over the central ridge! Spawns: `(-2.45, 0)` vs `(+2.45, 0)`.
 3. **Stage 3 — `portal_arena` (`stage_id = 3`, 双生折跃·传送门擂台)**:
    - Open `7.30m × 5.70m` (`x in [-3.65, +3.65], y in [-2.85, +2.85]`) Quantum Slipway: flat `5.20m` core (`|x| <= 2.60m`) flanked by smooth **`-8.0°` East & West downward danger cliff aprons** (`|x| in [2.60, 3.65]`).
    - **2 X-Linked Bidirectional Quantum Portal Pairs (`r = 0.44m`, zero-collision holographic arches)** that teleport **BOTH vehicles** (`spd_out = max(2.65, 1.15 * spd_in + 0.65)` redirected along `portal_out_yaw_deg`!) **AND Energy Cannon bolts**:
@@ -135,15 +135,25 @@ All 3 stages have **zero solid pillars, zero narrow bridges, and zero overhead p
      - **Magenta Cliff-Slingshot Pair**: `mag_sw (-1.12, -1.08)` ↔ `mag_ne (+1.12, +1.08)` — ejects **outward** (`0°` East / `180°` West) straight toward the `-8.0°` downward danger cliff aprons! Ramming or blasting an enemy into a Magenta gate slingshots them out toward the opposite cliff!
    - Spawns: `(-2.10, 0)` vs `(+2.10, 0)`.
 
+### 6.4 Match Duration (`30.0s`), KO Conditions & 100-Point Judge's Scorecard
+- **Round Clock**: Up to **`30.0` seconds** per game (`360 Hz` MuJoCo physics, `120 Hz` strategy tick).
+- **Instant KO / TKO**:
+  - **Ring-Out KO**: Falling off the arena cliff (`z < -0.45m`).
+  - **Immobilized TKO**: Staying inverted & stalled (`tilt_deg > 92°` and `self_speed < 0.12 m/s`) continuously for **`4.0s`**.
+- **`30.0s` Timeout Judge's Decision (`100` Points Total, tracked & displayed live every frame)**:
+  1. **Damage (`0–50 pts`, split proportionally)**: `50 × D_self / (D_self + D_opp)` where `D = impact_impulse + 12 × flips_inflicted + 8 × spring_launches_inflicted` (`25.0` each if zero).
+  2. **Aggression & Arena Control (`0–30 pts`, split proportionally)**: `30 × A_self / (A_self + A_opp)` (`+0.6/frame` advancing toward opponent within `45°` at `> 0.25 m/s`, `+0.4/frame` holding safer inner-arena margin `edge_dist > enemy_edge_dist + 0.20m`; `15.0` each if zero).
+  3. **Posture & Stability (`0–20 pts`, scored independently)**: `20 × (upright_frames / total_frames)` (`tilt_deg < 45°`).
+
 ---
 
 ## 7. Writing Your Own Control Strategy (`strategy` — 120Hz Pure Math & Rules)
 
-> **IMPORTANT**: Pre-built `"drive"` autopilot modes do **NOT** exist! You directly compute your vehicle's left & right wheel motor commands (`-1.0 .. +1.0`) and weapon triggers using math/boolean formulas over raw sensors.
+> **IMPORTANT**: Pre-built `"drive"` autopilot modes and pre-built auto-aim macros do **NOT** exist! You directly compute your vehicle's left & right wheel motor commands (`-1.0 .. +1.0`), optional `360°` turret rotation (`"cannon_yaw_deg"` or `"cannon_turn"`), and weapon triggers using math/boolean formulas over raw sensors.
 
-### 7.1 Differential Wheel & Angle Sign Convention (Read Carefully!)
-- **Top-Down Angle Convention (`*_angle_deg`)**: Viewed from above (`+Z`), all relative angles (`enemy_angle_deg`, `edge_angle_deg`, `center_angle_deg`, `spring_angle_deg`, `portal_angle_deg`, `incoming_bolt_angle_deg`) are measured from your `+X` nose in `[-180°, +180°]`:
-  - **`0°`** = dead ahead (`+X`)
+### 7.1 Differential Wheel, Turret & Angle Sign Convention (Read Carefully!)
+- **Top-Down Angle Convention (`*_angle_deg`)**: Viewed from above (`+Z`), all relative angles (`enemy_angle_deg`, `cannon_yaw_deg`, `cannon_enemy_angle_deg`, `edge_angle_deg`, `center_angle_deg`, `spring_angle_deg`, `portal_angle_deg`, `incoming_bolt_angle_deg`) are measured in `[-180°, +180°]`:
+  - **`0°`** = dead ahead (`+X` nose, or current cannon barrel direction for `cannon_enemy_angle_deg`)
   - **`+angle > 0°`** = **counter-clockwise (to your LEFT when upright!)**
   - **`-angle < 0°`** = **clockwise (to your RIGHT when upright!)**
 - **Differential Steering Law (when upright, `is_inverted == false`)**:
@@ -151,12 +161,12 @@ All 3 stages have **zero solid pillars, zero narrow bridges, and zero overhead p
   - To turn **LEFT (`+angle > 0°`)**, the **right** wheel must spin faster than the **left** wheel:
     `left = forward - turn`, `right = forward + turn` (where `turn > 0` when `target_angle_deg > 0`!).
 - **Upside-Down Inversion (`is_inverted == true`)**:
-  - If your vehicle flips upside down (`tilt_deg > 108°`) and uses large invertible wheels, the chassis has rolled `180°`: wheel rotation direction reverses AND physical left/right sides swap relative to top-down world angles! Specifically, if `(L, R)` is your desired upright command, the inverted equivalent is `left = -R`, `right = -L` (you must write this yourself using `iff(is_inverted, ...)` if your car is invertible!).
+  - If your vehicle flips upside down (`tilt_deg > 108°`) and uses large invertible wheels, the chassis has rolled `180°`: wheel rotation direction reverses AND physical left/right sides swap relative to top-down world angles! Specifically, if `(L, R)` is your desired upright command, the inverted equivalent is `left = -R`, `right = -L` (you must write this yourself using `iff(is_inverted, ...)` if your car is invertible!). *(Note: `energy_cannon` turret commands `"cannon_yaw_deg"` / `"cannon_turn"` automatically preserve top-down world CCW sign even when inverted.)*
 
 ### 7.2 Strategy Structure (`vars`, `let`, `rules`, `default_action`, `stage_overrides`)
 At every `120 Hz` tick (`dt = 0.00833s`), the controller executes in order:
 1. **`vars`** *(optional, max 20)*: Persistent numeric/boolean state variables initialized at `t = 0` and retained across ticks (updated via `"set_vars"` inside any matching rule!).
-2. **`let`** *(optional, max 28)*: Ordered dictionary of per-tick helper formulas evaluated top-to-bottom (later `let` formulas can reference earlier `let` variables!).
+2. **`let`** *(optional, max 36)*: Ordered dictionary of per-tick helper formulas evaluated top-to-bottom (later `let` formulas can reference earlier `let` variables!).
 3. **`rules`**: Evaluated **top-to-bottom**. The first rule whose `"when"` evaluates to `true`:
    - Evaluates optional `"set_vars"` updates (persisting into `vars`!), and
    - Evaluates its `"action"` formulas to drive hardware actuators!
@@ -168,6 +178,8 @@ At every `120 Hz` tick (`dt = 0.00833s`), the controller executes in order:
 - `"right"`: number or formula string -> clamped to `[-1.0, +1.0]` (right-side wheel motors)
 - `"center"`: optional number or formula string -> clamped to `[-1.0, +1.0]` (center wheel if any; defaults to `0.5 * (left + right)`)
 - `"spinner"`: number or formula string -> clamped to `[-1.0, +1.0]` (defaults to `1.0` if spinner installed)
+- `"cannon_yaw_deg"` *(alias `"turret_yaw_deg"`)*: optional number or formula string (degrees relative to `+X` nose, `0°` = ahead, `+90°` = left, `-90°` = right, `±180°` = behind) -> shortest-path velocity servo slewing your `energy_cannon` turret at up to `6.0 rad/s` (`~343°/s`). Defaults to holding `0°` forward if omitted!
+- `"cannon_turn"` *(alias `"turret_turn"`)*: optional number or formula string -> clamped to `[-1.0, +1.0]` for direct turret angular rate control (`+1.0` = `+343°/s` CCW; ignored on ticks where `"cannon_yaw_deg"` is specified).
 - `"flipper"`, `"hammer"`, `"piston"`, `"cannon"`, `"thruster"`: boolean (`true`/`false`) or boolean formula string!
 
 ### 7.4 Allowed Math Operators & Functions in Formulas
@@ -180,9 +192,9 @@ At every `120 Hz` tick (`dt = 0.00833s`), the controller executes in order:
   - `deg(rad)`, `rad(deg)`, `wrap_deg(deg)` *(wraps any angle into `[-180, +180]`!)*
   - `sqrt(x)`, `hypot(dx, dy)`
 
-*(Tip: How to aim at ANY custom world point `(tx, ty)` you compute yourself? `target_angle_deg = wrap_deg(atan2_deg(ty - self_y, tx - self_x) - self_yaw_deg)`!)*
+*(Tip: How to aim your hull OR your `360°` `energy_cannon` turret at ANY custom world point `(tx, ty)` — e.g. a lead-predicted target `tx = enemy_x + enemy_vx * t_lead, ty = enemy_y + enemy_vy * t_lead` or a Stage 3 portal entrance? `aim_yaw_deg = wrap_deg(atan2_deg(ty - self_y, tx - self_x) - self_yaw_deg)`!)*
 
-### 7.5 Complete Raw Sensor Reference (55 Live Sensors)
+### 7.5 Complete Raw Sensor Reference (59 Live Sensors)
 
 | Sensor Name | Type | Meaning |
 | :--- | :---: | :--- |
@@ -215,12 +227,14 @@ At every `120 Hz` tick (`dt = 0.00833s`), the controller executes in order:
 | `portal_ready` | `bool` | `true` if your nearest portal is armed |
 | `enemy_portal_x`, `enemy_portal_y`, `enemy_portal_dist` | `float` (m) | Nearest quantum portal to **opponent** (`9.9` on Stages 1 & 2) |
 | `enemy_portal_out_yaw_deg`, `enemy_portal_ready` | `float` / `bool` | Linked exit ejection direction & armed status of opponent's nearest portal |
+| `cannon_yaw_deg`, `cannon_world_yaw_deg` | `float` (deg) | Current horizontal turret yaw relative to `+X` nose & in world frame (`0` if no cannon) |
+| `cannon_enemy_angle_deg`, `abs_cannon_enemy_angle_deg` | `float` (deg) | Angle from your **current cannon barrel direction** to opponent (`+` = CCW/left) |
 | `has_line_of_sight`, `cannon_ready` | `bool` | Straight-line sight check & `energy_cannon` cooldown check |
 | `incoming_bolt_dist` | `float` (m) | Distance to nearest incoming enemy bolt (`9.9` if none) |
 | `incoming_bolt_angle_deg`, `abs_incoming_bolt_angle_deg` | `float` (deg) | Angle from your `+X` nose toward nearest incoming bolt |
 | `incoming_bolt_vx`, `incoming_bolt_vy` | `float` (m/s) | World velocity vector of nearest incoming enemy bolt |
 | `thruster_fuel` | `float` (`0..1.8`) | Remaining regenerating booster fuel (s) |
-| `time_sec`, `dt`, `stage_id` | `float` / `int` | Match clock (`0..15s`), tick `dt` (`0.00833s`), stage (`1, 2, 3`) |
+| `time_sec`, `dt`, `stage_id` | `float` / `int` | Match clock (`0..30s`), tick `dt` (`0.00833s`), stage (`1, 2, 3`) |
 
 ---
 
@@ -229,4 +243,4 @@ At every `120 Hz` tick (`dt = 0.00833s`), the controller executes in order:
 1. **Static Formula Compiler & Mobility Linter (`python arena.py validate <car.json>`, 0 credits)**:
    - Compiles and dry-runs every formula in `vars`, `let`, `rules`, `set_vars`, and `default_action`, catching syntax errors, unknown sensor typos, or unused weapons, and reports `total_mass_kg`, `weight_class`, and flat-sprint `est_top_speed_mps`.
 2. **Per-Rule Coverage & 2D Trajectory Trace (`python arena.py test`)**:
-   - Returns `strategy_diagnostics_A` (`NEVER_TRIGGERED` alerts, active time %, distance driven, damage, spring launches, cannon hit rate), `tactical_timeline_A_1hz` (including exact `wheel_cmd: [left, right]`), `ko_diagnosis`, and `previews/trace_*.png`.
+   - Returns `strategy_diagnostics_A` (`NEVER_TRIGGERED` alerts, active time %, distance driven, damage, `turret_slewed_deg`, spring launches, cannon hit rate), `tactical_timeline_A_1hz` (including exact `wheel_cmd: [left, right]` and `turret_yaw_deg`), `ko_diagnosis`, and `previews/trace_*.png`.
