@@ -55,6 +55,26 @@
         }
       },
       {
+        "name": "skirt_mud_bog",
+        "when": "mud_dist < 0.45 and abs_mud_angle_deg < 75",
+        "action": {
+          "left": "clamp(0.85 - clamp(wrap_deg(mud_angle_deg + iff(mud_angle_deg >= 0, -88.0, 88.0)) / 50.0, -1.0, 1.0), -1.0, 1.0)",
+          "right": "clamp(0.85 + clamp(wrap_deg(mud_angle_deg + iff(mud_angle_deg >= 0, -88.0, 88.0)) / 50.0, -1.0, 1.0), -1.0, 1.0)",
+          "cannon_yaw_deg": "turret_aim",
+          "cannon": "cannon_ready and has_line_of_sight and abs_cannon_enemy_angle_deg < 10"
+        }
+      },
+      {
+        "name": "recover_from_mirror_ice",
+        "when": "on_ice",
+        "action": {
+          "left": "clamp(0.75 * max(0.25, cos_deg(center_angle_deg)) - 0.75 * turn_c, -1.0, 1.0)",
+          "right": "clamp(0.75 * max(0.25, cos_deg(center_angle_deg)) + 0.75 * turn_c, -1.0, 1.0)",
+          "cannon_yaw_deg": "turret_aim",
+          "cannon": "cannon_ready and has_line_of_sight and abs_cannon_enemy_angle_deg < 10"
+        }
+      },
+      {
         "name": "unstick",
         "when": "stalled_sec > 1.0",
         "action": {

@@ -16,7 +16,9 @@ import numpy as np
 from .arenas import (
     ARENA_META,
     ARENA_ORDER,
+    compute_car_mud_factor,
     create_hazard_runtime,
+    point_on_ice,
     resolve_stage_key,
     step_arena_hazards,
     step_arena_portals,
@@ -344,13 +346,24 @@ def run_single_match(
                                     "rule": ctrl_a.active_rule_name,
                                 })
 
+            mud_a = compute_car_mud_factor(stage_key, model, data, body_a, solid_a_gids) if grounded_a else 0.0
+            mud_b = compute_car_mud_factor(stage_key, model, data, body_b, solid_b_gids) if grounded_b else 0.0
+            ice_a = point_on_ice(stage_key, pa_xyz[0], pa_xyz[1])
+            ice_b = point_on_ice(stage_key, pb_xyz[0], pb_xyz[1])
+
             if sub % 3 == 0:
                 ctrl_dt = 3.0 * PHYSICS_DT
                 counting = (ko_frame is None)
                 bolts_from_b = [b for b in active_bolts if b["owner"] == "B"]
                 bolts_from_a = [b for b in active_bolts if b["owner"] == "A"]
-                sens_a = ctrl_a.step(data, t_sec, ctrl_dt, enemy_bolts=bolts_from_b, hazard_state=hazard_state, record_stats=counting)
-                sens_b = ctrl_b.step(data, t_sec, ctrl_dt, enemy_bolts=bolts_from_a, hazard_state=hazard_state, record_stats=counting)
+                sens_a = ctrl_a.step(
+                    data, t_sec, ctrl_dt, enemy_bolts=bolts_from_b, hazard_state=hazard_state,
+                    self_mud_factor=mud_a, enemy_mud_factor=mud_b, record_stats=counting,
+                )
+                sens_b = ctrl_b.step(
+                    data, t_sec, ctrl_dt, enemy_bolts=bolts_from_a, hazard_state=hazard_state,
+                    self_mud_factor=mud_b, enemy_mud_factor=mud_a, record_stats=counting,
+                )
 
                 # Spawn newly fired energy bolts & apply real Newton's-3rd-law recoil!
                 for new_b in ctrl_a.pop_fired_bolts() + ctrl_b.pop_fired_bolts():
@@ -371,9 +384,9 @@ def run_single_match(
                             shots_fired_b += 1
                     foley_events.append({"frame": frame_idx, "kind": "plasma_fire", "strength": 0.9})
 
-            # Apply grounded mass-vs-speed tire rolling & yaw scrub dynamics
-            apply_grounded_mass_drag(data, body_a, mass_a, grounded_a)
-            apply_grounded_mass_drag(data, body_b, mass_b, grounded_b)
+            # Apply grounded mass-vs-speed tire rolling, viscous mud drag & low-drag mirror ice dynamics
+            apply_grounded_mass_drag(data, body_a, mass_a, grounded_a, mud_factor=mud_a, on_ice=ice_a)
+            apply_grounded_mass_drag(data, body_b, mass_b, grounded_b, mud_factor=mud_b, on_ice=ice_b)
 
             # Step all active 3D energy bolts & test slope/terrain / hull impact / portal warp!
             surviving_bolts: List[Dict[str, Any]] = []

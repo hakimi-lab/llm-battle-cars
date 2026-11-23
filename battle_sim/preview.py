@@ -19,7 +19,19 @@ import matplotlib.pyplot as plt
 import mujoco
 import numpy as np
 
-from .arenas import ARENA_META, STAGE_PORTALS, STAGE_SPRINGS, build_arena_mjcf, resolve_stage_key, step_arena_hazards
+from .arenas import (
+    ARENA_META,
+    ICE_INNER_HX,
+    ICE_INNER_HY,
+    ICE_OUTER_HX,
+    ICE_OUTER_HY,
+    STAGE_MUD_ZONES,
+    STAGE_PORTALS,
+    STAGE_SPRINGS,
+    build_arena_mjcf,
+    resolve_stage_key,
+    step_arena_hazards,
+)
 from .catalog import PHYSICS_DT
 from .compiler import _terrain_surface_z_at, compile_single_car_model, full_validate_car
 
@@ -73,6 +85,17 @@ def _cylinder_faces(rad: float, hh: float, n_seg: int = 24, cone: bool = False) 
     top_r = 0.04 * rad if cone else rad
     bot = np.stack([rad * np.cos(angles), rad * np.sin(angles), np.full_like(angles, -hh)], axis=1)
     top = np.stack([top_r * np.cos(angles), top_r * np.sin(angles), np.full_like(angles, hh)], axis=1)
+    faces: List[np.ndarray] = [bot[::-1], top]
+    for i in range(n_seg):
+        j = (i + 1) % n_seg
+        faces.append(np.array([bot[i], bot[j], top[j], top[i]], dtype=np.float64))
+    return faces
+
+
+def _elliptical_disc_faces(rx: float, ry: float, hh: float, n_seg: int = 36) -> List[np.ndarray]:
+    angles = np.linspace(0.0, 2.0 * math.pi, n_seg, endpoint=False)
+    bot = np.stack([rx * np.cos(angles), ry * np.sin(angles), np.full_like(angles, -hh)], axis=1)
+    top = np.stack([rx * np.cos(angles), ry * np.sin(angles), np.full_like(angles, hh)], axis=1)
     faces: List[np.ndarray] = [bot[::-1], top]
     for i in range(n_seg):
         j = (i + 1) % n_seg
@@ -575,8 +598,8 @@ def render_car_preview(spec: Dict[str, Any], out_png: Path) -> Dict[str, Any]:
 
 def render_arena_preview(stage: str, out_png: Path, t_sec: float = 0.0) -> Path:
     """
-    Render a 2-panel per-pixel Z-buffered blueprint of an arena:
-      - Left: 3D Perspective View (showing smooth slopes, all flush spring pads, launch vectors & spawn beacons)
+    Render a 2-panel per-pixel Z-buffered diorama blueprint of an arena:
+      - Left: 3D Perspective View (showing diorama architecture, slopes, catapults/mud/ice & spawn beacons)
       - Right: Exact 90° Orthographic Top-Down Tactical Map (+X East, +Y North) with coordinate grid
     """
     sk = resolve_stage_key(stage)
@@ -598,8 +621,6 @@ def render_arena_preview(stage: str, out_png: Path, t_sec: float = 0.0) -> Path:
             step_arena_hazards(sk, model, data, s * PHYSICS_DT, trap_ids)
             mujoco.mj_step(model, data)
     else:
-        # Prop every hinged catapult plate open at 28 deg around its fixed ground hinge edge in blueprint preview
-        # so viewers immediately see which edge is hinged on the ground and which way it flings cars diagonally!
         for tid in trap_ids:
             if tid >= 0:
                 data.ctrl[tid] = math.radians(28.0)
@@ -607,8 +628,10 @@ def render_arena_preview(stage: str, out_png: Path, t_sec: float = 0.0) -> Path:
             mujoco.mj_step(model, data)
     mujoco.mj_forward(model, data)
 
-    light_dir = np.array([0.45, -0.58, 0.68], dtype=np.float64)
+    light_dir = np.array([0.46, -0.56, 0.69], dtype=np.float64)
     light_dir /= np.linalg.norm(light_dir)
+    rim_dir = np.array([-0.55, 0.52, 0.65], dtype=np.float64)
+    rim_dir /= np.linalg.norm(rim_dir)
 
     polys: List[np.ndarray] = []
     fcols: List[Tuple[float, float, float, float]] = []
@@ -617,7 +640,7 @@ def render_arena_preview(stage: str, out_png: Path, t_sec: float = 0.0) -> Path:
     for gi in range(model.ngeom):
         gname = mujoco.mj_id2name(model, mujoco.mjtObj.mjOBJ_GEOM, gi) or ""
         gtype = int(model.geom_type[gi])
-        if gtype == int(mujoco.mjtGeom.mjGEOM_PLANE) or "pedestal" in gname or "pillar" in gname:
+        if gtype == int(mujoco.mjtGeom.mjGEOM_PLANE):
             continue
         sz = model.geom_size[gi]
         pos = data.geom_xpos[gi]
@@ -627,12 +650,27 @@ def render_arena_preview(stage: str, out_png: Path, t_sec: float = 0.0) -> Path:
         if gtype == int(mujoco.mjtGeom.mjGEOM_BOX):
             lfaces = _box_faces(float(sz[0]), float(sz[1]), float(sz[2]))
         elif gtype == int(mujoco.mjtGeom.mjGEOM_CYLINDER):
-            lfaces = _cylinder_faces(float(sz[0]), float(sz[1]), n_seg=36 if "deck" in gname else 24)
+            n_c = 48 if ("vis_skin" in gname or "inner_plate" in gname or "plaza" in gname) else 28
+            lfaces = _cylinder_faces(float(sz[0]), float(sz[1]), n_seg=n_c)
+        elif gtype == int(mujoco.mjtGeom.mjGEOM_ELLIPSOID):
+            if float(sz[2]) <= 0.025:
+                lfaces = _elliptical_disc_faces(float(sz[0]), float(sz[1]), float(sz[2]), n_seg=40)
+            else:
+                lfaces = _sphere_faces(float(sz[0]), float(sz[1]), float(sz[2]), n_lat=8, n_lon=18)
         else:
             lfaces = _sphere_faces(float(sz[0]), float(sz[0]), float(sz[0]), n_lat=8, n_lon=14)
 
-        is_spring_vis = ("spring" in gname) or ("portal" in gname)
-        is_neon_portal = ("portal_glow" in gname) or ("portal_arch" in gname) or ("portal_core" in gname)
+        is_emissive = any(tok in gname for tok in (
+            "reactor_glow", "core_ring", "core_bullseye", "spawn_", "hazard_bevel",
+            "cliff_rim", "crest_line", "ice_border", "frost_crack", "chev",
+        ))
+        is_spring = "spring" in gname
+        is_ice = ("_ice_" in gname) or ("crystal_" in gname)
+        is_mud_wet = ("mud_wet" in gname) or ("mud_bub" in gname)
+        suppress_wire = any(tok in gname for tok in (
+            "center_deck_", "vis_skin", "inner_plate", "mud_moss", "mud_peat", "mud_wet", "moss_patch",
+        ))
+
         for lf in lfaces:
             wf = (lf @ R.T) + pos
             nrm = np.cross(wf[1] - wf[0], wf[2] - wf[0])
@@ -640,28 +678,39 @@ def render_arena_preview(stage: str, out_png: Path, t_sec: float = 0.0) -> Path:
             if nn > 1e-9:
                 nrm /= nn
             hemi = 0.50 + 0.50 * float(nrm[2])
-            shade = 0.45 + 0.16 * hemi + 0.43 * max(0.0, float(np.dot(nrm, light_dir)))
-            if is_neon_portal:
-                shade = 1.06
-            elif is_spring_vis:
-                shade = max(shade, 0.78)
-            srgb = np.clip(base_rgb * shade, 0.0, 1.0)
+            key_d = max(0.0, float(np.dot(nrm, light_dir)))
+            rim_d = max(0.0, float(np.dot(nrm, rim_dir)))
+            shade = 0.44 + 0.16 * hemi + 0.40 * key_d + 0.09 * rim_d
+            spec_boost = 0.0
+            if is_emissive:
+                shade = 1.08
+                spec_boost = 0.06
+            elif is_spring:
+                shade = max(shade, 0.80)
+            elif is_ice:
+                shade = 0.54 + 0.20 * hemi + 0.34 * key_d
+                spec_boost = 0.10 * (key_d ** 3)
+            elif is_mud_wet:
+                spec_boost = 0.07 * (key_d ** 4)
+
+            srgb = np.clip(base_rgb * shade + spec_boost, 0.0, 1.0)
             polys.append(wf)
             fcols.append((float(srgb[0]), float(srgb[1]), float(srgb[2]), 0.99))
-            ecols.append((float(srgb[0] * 0.36), float(srgb[1] * 0.36), float(srgb[2] * 0.36), 0.38))
+            if suppress_wire:
+                ecols.append((0.0, 0.0, 0.0, 0.0))
+            else:
+                ecols.append((float(srgb[0] * 0.40), float(srgb[1] * 0.40), float(srgb[2] * 0.40), 0.30))
 
-    # Add 3D coordinate grid + parabolic diagonal catapult launch arcs / portal link arcs + Spawn A / B beacons
     lines_3d: List[Tuple[np.ndarray, np.ndarray, Tuple[float, float, float], int]] = []
     for g in range(-4, 5):
-        lines_3d.append((np.array([float(g), -4.0, -0.48]), np.array([float(g), 4.0, -0.48]), (0.15, 0.19, 0.27), 1))
-        lines_3d.append((np.array([-4.0, float(g), -0.48]), np.array([4.0, float(g), -0.48]), (0.15, 0.19, 0.27), 1))
+        lines_3d.append((np.array([float(g), -4.0, -0.52]), np.array([float(g), 4.0, -0.52]), (0.14, 0.18, 0.26), 1))
+        lines_3d.append((np.array([-4.0, float(g), -0.52]), np.array([4.0, float(g), -0.52]), (0.14, 0.18, 0.26), 1))
 
     for sp in STAGE_SPRINGS[sk]:
         sx, sy, sz = float(sp["x"]), float(sp["y"]), float(sp["z"])
         fyaw = math.radians(float(sp["fling_yaw"]))
         dx_u, dy_u = math.cos(fyaw), math.sin(fyaw)
-        is_v = "vault" in sp["tag"]
-        acol = (0.28, 0.96, 1.0) if is_v else (1.0, 0.86, 0.24)
+        acol = (1.0, 0.86, 0.24)
         arc_pts = []
         for k_arc in range(7):
             u = k_arc / 6.0
@@ -671,31 +720,6 @@ def render_arena_preview(stage: str, out_png: Path, t_sec: float = 0.0) -> Path:
         for k_arc in range(6):
             lines_3d.append((arc_pts[k_arc], arc_pts[k_arc + 1], acol, 2))
 
-    seen_portal_pairs = set()
-    for pt in STAGE_PORTALS.get(sk, []):
-        px, py, pz = float(pt["x"]), float(pt["y"]), float(pt["z"])
-        gyaw = math.radians(float(pt["gate_yaw"]))
-        is_cyan = (pt["pair"] == "cyan")
-        pcol = (0.20, 0.92, 1.0) if is_cyan else (0.96, 0.35, 1.0)
-        # Exit vector showing which direction objects shoot OUT of this gate
-        e0 = np.array([px, py, pz + 0.05], dtype=np.float64)
-        e1 = np.array([px + 0.95 * math.cos(gyaw), py + 0.95 * math.sin(gyaw), pz + 0.05], dtype=np.float64)
-        lines_3d.append((e0, e1, pcol, 2))
-        # Overhead quantum tether arc connecting each linked portal pair once
-        if pt["pair"] not in seen_portal_pairs:
-            seen_portal_pairs.add(pt["pair"])
-            dx_p, dy_p = float(pt["dest_x"]), float(pt["dest_y"])
-            tether_pts = []
-            for k_t in range(9):
-                u = k_t / 8.0
-                tx = px + (dx_p - px) * u
-                ty = py + (dy_p - py) * u
-                tz = 0.58 + (0.48 if is_cyan else 0.28) * math.sin(math.pi * u)
-                tether_pts.append(np.array([tx, ty, tz], dtype=np.float64))
-            for k_t in range(8):
-                if k_t % 2 == 0:
-                    lines_3d.append((tether_pts[k_t], tether_pts[k_t + 1], pcol, 2))
-
     sa = ameta["spawn_a"]
     sb = ameta["spawn_b"]
     za = _terrain_surface_z_at(sk, float(sa[0]), float(sa[1]))
@@ -704,46 +728,53 @@ def render_arena_preview(stage: str, out_png: Path, t_sec: float = 0.0) -> Path:
     pb3 = np.array([float(sb[0]), float(sb[1]), zb + 0.18], dtype=np.float64)
     yawa = math.radians(float(ameta["yaw_a"]))
     yawb = math.radians(float(ameta["yaw_b"]))
-    lines_3d.append((np.array([sa[0], sa[1], za + 0.02]), pa3, (0.22, 0.74, 0.97), 2))
-    lines_3d.append((pa3, pa3 + np.array([0.45 * math.cos(yawa), 0.45 * math.sin(yawa), 0.0]), (0.22, 0.74, 0.97), 2))
+    lines_3d.append((np.array([sa[0], sa[1], za + 0.02]), pa3, (0.22, 0.80, 0.99), 2))
+    lines_3d.append((pa3, pa3 + np.array([0.45 * math.cos(yawa), 0.45 * math.sin(yawa), 0.0]), (0.22, 0.80, 0.99), 2))
     lines_3d.append((np.array([sb[0], sb[1], zb + 0.02]), pb3, (0.98, 0.44, 0.52), 2))
     lines_3d.append((pb3, pb3 + np.array([0.45 * math.cos(yawb), 0.45 * math.sin(yawb), 0.0]), (0.98, 0.44, 0.52), 2))
 
     spawn_pts = [
-        (pa3, (0.22, 0.74, 0.97), 9, True),
+        (pa3, (0.22, 0.80, 0.99), 9, True),
         (pb3, (0.98, 0.44, 0.52), 9, True),
     ]
 
-    fig = plt.figure(figsize=(15.2, 7.3), dpi=135, facecolor="#111620")
-    sub_hdr = "Linked Quantum Portals Blueprint" if STAGE_PORTALS.get(sk) else "Hinged Diagonal Catapults Blueprint"
+    if sk == "spring_arena":
+        sub_hdr = "Cyber-Neon Colosseum & 4 Edge-Sensitive Catapults"
+        p3d_title = "3D Perspective View (Propped 28° Hinged Catapults & Under-Stage Reactor)"
+        bg_3d = (0.068, 0.090, 0.138)
+    elif sk == "mud_arena":
+        sub_hdr = "Emerald Bayou, Stone Causeways & 50%-Slow Mud Bogs"
+        p3d_title = "3D Perspective View (Central & Corner Peat Mud Bogs + Dry Flagstone Causeways)"
+        bg_3d = (0.072, 0.110, 0.098)
+    else:
+        sub_hdr = "Glacier Ski-Jump Overpass & Low-Friction Mirror-Ice Rink"
+        p3d_title = "3D Perspective View (+0.26m Glacier Ramp + Surrounding mu=0.10 Mirror Ice)"
+        bg_3d = (0.075, 0.115, 0.175)
+
+    fig = plt.figure(figsize=(15.4, 7.4), dpi=135, facecolor="#0E131D")
     fig.suptitle(
         _safe_label(f"Stage {ameta['stage_id']}: {ameta['name_zh']} ({sk}) — {sub_hdr}"),
         color="#F8FAFC", fontsize=13.2, fontweight="bold", y=0.96,
     )
 
-    p3d_title = (
-        "3D Perspective View (Cyan Flank Portals & Magenta Cliff-Slingshot Portals)"
-        if STAGE_PORTALS.get(sk)
-        else "3D Perspective View (Hinged Catapults Propped at 28° & Launch Arcs)"
-    )
     panel_specs = [
-        (p3d_title, 31.0, -52.0, True, 4.15),
-        ("Orthographic Top-Down Tactical Map (+X East, +Y North)", 90.0, -90.0, False, 3.95),
+        (p3d_title, 30.0, -52.0, True, 4.20),
+        ("Orthographic Top-Down Tactical Map (+X East, +Y North)", 90.0, -90.0, False, 3.98),
     ]
     for p_idx, (vtitle, elev, azim, is_persp, hspan) in enumerate(panel_specs, start=1):
-        ax = fig.add_subplot(1, 2, p_idx, facecolor="#171E2C")
+        ax = fig.add_subplot(1, 2, p_idx, facecolor="#141B28")
         rgb_img, proj2d = _render_zbuffer_scene(
             polys=polys,
             face_colors=fcols,
             edge_colors=ecols,
-            lookat=np.array([0.0, 0.0, 0.05], dtype=np.float64),
+            lookat=np.array([0.0, 0.0, -0.04 if is_persp else 0.04], dtype=np.float64),
             half_span=hspan,
             elev_deg=elev,
             azim_deg=azim,
-            width_px=680,
-            height_px=540,
+            width_px=700,
+            height_px=550,
             perspective=is_persp,
-            bg_rgb=(0.090, 0.118, 0.172),
+            bg_rgb=bg_3d,
             lines_3d=lines_3d,
             overlay_points=spawn_pts,
         )
@@ -754,11 +785,17 @@ def render_arena_preview(stage: str, out_png: Path, t_sec: float = 0.0) -> Path:
         ax.text(bx_px + 8, by_px - 8, "Spawn B", color="#FDA4AF", fontsize=8.5, fontweight="bold")
         for sp in STAGE_SPRINGS[sk]:
             spx, spy = proj2d([sp["x"], sp["y"], sp["z"] + 0.08])
-            ax.text(spx, spy + 14, sp["tag"], color="#FDE68A", fontsize=7.2, ha="center", fontweight="bold")
-        for pt in STAGE_PORTALS.get(sk, []):
-            ppx, ppy = proj2d([pt["x"], pt["y"], pt["z"] + 0.08])
-            lbl_col = "#67E8F9" if pt["pair"] == "cyan" else "#F0ABFC"
-            ax.text(ppx, ppy + 15, pt["tag"], color=lbl_col, fontsize=7.4, ha="center", fontweight="bold")
+            ax.text(spx, spy + 14, sp["tag"], color="#FDE68A", fontsize=7.4, ha="center", fontweight="bold")
+        for mz in STAGE_MUD_ZONES.get(sk, []):
+            mpx, mpy = proj2d([mz["x"], mz["y"], 0.04])
+            ax.text(mpx, mpy, f"{mz['tag']} (-50% spd)", color="#FDE68A", fontsize=7.5, ha="center", va="center", fontweight="bold")
+        if sk == "ice_ridge" and not is_persp:
+            cpx, cpy = proj2d([0.0, 0.0, 0.28])
+            ax.text(cpx, cpy, "Glacier Ramp (+0.26m)", color="#0F172A", fontsize=7.6, ha="center", va="center", fontweight="bold")
+            ipx_w, ipy_w = proj2d([-3.10, 1.80, 0.02])
+            ax.text(ipx_w, ipy_w, "Mirror Ice (mu=0.10)", color="#E0F2FE", fontsize=7.3, ha="center", fontweight="bold")
+            ipx_e, ipy_e = proj2d([3.10, -1.80, 0.02])
+            ax.text(ipx_e, ipy_e, "-8° Ice Chute", color="#E0F2FE", fontsize=7.3, ha="center", fontweight="bold")
         ax.set_title(vtitle, color="#CBD5E1", fontsize=10.6, pad=6)
         ax.set_xticks([])
         ax.set_yticks([])
@@ -784,25 +821,31 @@ def _draw_2d_arena_backdrop(ax: Any, stage_key: str) -> None:
         ax.axvline(g, color="#1C2434", lw=0.5, zorder=0)
 
     if stage_key == "spring_arena":
-        ax.add_patch(mpatches.Circle((0, 0), 3.45, facecolor="#3A1C20", edgecolor="#EF4444", lw=1.4, ls="--", zorder=1))
-        ax.add_patch(mpatches.Circle((0, 0), 2.45, facecolor="#1E293B", edgecolor="#64748B", lw=1.1, zorder=2))
-        ax.text(0, -3.65, "Flat Inner Deck (r=2.45m) | -7.5-deg Cambered Danger Slope (r=3.45m) | 4 Hinged Diagonal Catapults", color="#94A3B8", fontsize=7.2, ha="center")
+        ax.add_patch(mpatches.Circle((0, 0), 3.45, facecolor="#2B161E", edgecolor="#F43F5E", lw=1.4, ls="--", zorder=1))
+        ax.add_patch(mpatches.Circle((0, 0), 2.45, facecolor="#1A2232", edgecolor="#F59E0B", lw=1.2, zorder=2))
+        ax.add_patch(mpatches.Circle((0, 0), 0.62, facecolor="none", edgecolor="#22D3EE", lw=0.9, alpha=0.65, zorder=2))
+        ax.text(0, -3.65, "Cyber Colosseum (r=2.45m) | -7.5° Danger Slope (r=3.45m) | 4 Edge-Sensitive Hinged Catapults", color="#94A3B8", fontsize=7.2, ha="center")
 
-    elif stage_key == "camelback_ridge":
-        ax.add_patch(mpatches.Rectangle((-3.60, -2.95), 7.20, 5.90, facecolor="#1E293B", edgecolor="#EF4444", lw=1.3, ls="--", zorder=1))
-        ax.add_patch(mpatches.Rectangle((-1.75, -2.95), 3.50, 5.90, facecolor="#26354A", edgecolor="#475569", lw=0.9, zorder=2))
-        ax.add_patch(mpatches.Rectangle((-0.52, -2.95), 1.04, 5.90, facecolor="#31445E", edgecolor="#60A5FA", lw=1.1, zorder=2))
-        ax.text(0, -3.65, "Open 7.2x5.9m Plateau | +0.24m Central Ridge Hill | 2 Ridge Catapults + 2 Vault Catapults", color="#94A3B8", fontsize=7.2, ha="center")
+    elif stage_key == "mud_arena":
+        ax.add_patch(mpatches.Rectangle((-3.60, -2.90), 7.20, 5.80, facecolor="#1E2F23", edgecolor="#EF4444", lw=1.3, ls="--", zorder=1))
+        ax.add_patch(mpatches.Rectangle((-3.60, -2.20), 7.20, 4.40, facecolor="#24382B", edgecolor="#4ADE80", lw=0.9, zorder=2))
+        for mz in STAGE_MUD_ZONES["mud_arena"]:
+            ax.add_patch(mpatches.Ellipse(
+                (float(mz["x"]), float(mz["y"])), 2.0 * float(mz["rx"]), 2.0 * float(mz["ry"]),
+                facecolor="#3E2414", edgecolor="#A16207", lw=1.4, alpha=0.92, zorder=3,
+            ))
+            ax.text(float(mz["x"]), float(mz["y"]), "MUD -50%", color="#FDE68A", fontsize=6.6, ha="center", va="center", zorder=4)
+        ax.text(0, -3.65, "7.2x5.8m Emerald Bayou | Brown Ellipses = -50% Speed Mud Bogs | -7° N/S Wet Cliff Banks", color="#94A3B8", fontsize=7.1, ha="center")
 
-    else:  # portal_arena
-        ax.add_patch(mpatches.Rectangle((-3.65, -2.85), 7.30, 5.70, facecolor="#3B1A24", edgecolor="#EF4444", lw=1.3, ls="--", zorder=1))
-        ax.add_patch(mpatches.Rectangle((-2.60, -2.85), 5.20, 5.70, facecolor="#1B2538", edgecolor="#38BDF8", lw=1.1, zorder=2))
-        ax.text(0, -3.65, "7.3x5.7m Quantum Slipway | -8° E/W Cliff Aprons | Cyan Flank Portals + Magenta Cliff-Slingshot Portals", color="#94A3B8", fontsize=7.1, ha="center")
+    else:  # ice_ridge
+        ax.add_patch(mpatches.Rectangle((-3.70, -2.90), 7.40, 5.80, facecolor="#25638A", edgecolor="#EF4444", lw=1.3, ls="--", zorder=1))
+        ax.add_patch(mpatches.Rectangle((-2.75, -2.90), 5.50, 5.80, facecolor="#3892B8", edgecolor="#7DD3FC", lw=0.9, zorder=1))
+        ax.add_patch(mpatches.Rectangle((-ICE_INNER_HX, -ICE_INNER_HY), 2 * ICE_INNER_HX, 2 * ICE_INNER_HY, facecolor="#2B374B", edgecolor="#E0F2FE", lw=1.4, zorder=2))
+        ax.add_patch(mpatches.Rectangle((-1.45, -ICE_INNER_HY), 2.90, 2 * ICE_INNER_HY, facecolor="#3B4D68", edgecolor="#93C5FD", lw=0.9, zorder=2))
+        ax.add_patch(mpatches.Rectangle((-0.42, -ICE_INNER_HY), 0.84, 2 * ICE_INNER_HY, facecolor="#93B4D4", edgecolor="#38BDF8", lw=1.1, zorder=2))
+        ax.text(0, -3.65, "7.4x5.8m Glacier Arena | +0.26m Ski-Jump Crest | Cyan = Mirror Ice (mu=0.10) & -8° Ice Chutes", color="#94A3B8", fontsize=7.1, ha="center")
 
     for sp in STAGE_SPRINGS.get(stage_key, []):
-        is_v = "vault" in sp["tag"]
-        fc = "#0E7490" if is_v else "#78350F"
-        ec = "#22D3EE" if is_v else "#FBBF24"
         sx, sy = float(sp["x"]), float(sp["y"])
         phi = math.radians(float(sp["fling_yaw"]))
         cp, s_p = math.cos(phi), math.sin(phi)
@@ -811,25 +854,11 @@ def _draw_2d_arena_backdrop(ax: Any, stage_key: str) -> None:
             (sx + lx * cp - ly * s_p, sy + lx * s_p + ly * cp)
             for lx, ly in [(-hx, -hy), (hx, -hy), (hx, hy), (-hx, hy)]
         ]
-        ax.add_patch(mpatches.Polygon(pts, closed=True, facecolor=fc, edgecolor=ec, lw=1.2, alpha=0.85, zorder=3))
+        ax.add_patch(mpatches.Polygon(pts, closed=True, facecolor="#78350F", edgecolor="#FBBF24", lw=1.2, alpha=0.88, zorder=3))
         h0 = (sx + hx * cp - hy * s_p, sy + hx * s_p + hy * cp)
         h1 = (sx + hx * cp + hy * s_p, sy + hx * s_p - hy * cp)
         ax.plot([h0[0], h1[0]], [h0[1], h1[1]], color="#E2E8F0", lw=2.4, zorder=4)
-        ax.arrow(sx - 0.15 * cp, sy - 0.15 * s_p, 0.55 * cp, 0.55 * s_p, head_width=0.14, head_length=0.14, fc=ec, ec="#0F141E", lw=0.4, zorder=4, length_includes_head=True)
-
-    drawn_links = set()
-    for pt in STAGE_PORTALS.get(stage_key, []):
-        is_c = (pt["pair"] == "cyan")
-        fc = "#083344" if is_c else "#4A044E"
-        ec = "#22D3EE" if is_c else "#E879F9"
-        px, py = float(pt["x"]), float(pt["y"])
-        gy = math.radians(float(pt["gate_yaw"]))
-        ax.add_patch(mpatches.Circle((px, py), 0.44, facecolor=fc, edgecolor=ec, lw=1.8, alpha=0.90, zorder=3))
-        ax.add_patch(mpatches.Circle((px, py), 0.22, facecolor=ec, edgecolor="#FFFFFF", lw=0.7, alpha=0.55, zorder=3))
-        ax.arrow(px, py, 0.62 * math.cos(gy), 0.62 * math.sin(gy), head_width=0.14, head_length=0.14, fc=ec, ec="#0F141E", lw=0.4, zorder=4, length_includes_head=True)
-        if pt["pair"] not in drawn_links:
-            drawn_links.add(pt["pair"])
-            ax.plot([px, float(pt["dest_x"])], [py, float(pt["dest_y"])], color=ec, lw=1.0, ls=":", alpha=0.45, zorder=2)
+        ax.arrow(sx - 0.15 * cp, sy - 0.15 * s_p, 0.55 * cp, 0.55 * s_p, head_width=0.14, head_length=0.14, fc="#FBBF24", ec="#0F141E", lw=0.4, zorder=4, length_includes_head=True)
 
 
 def render_tactical_trace_png(trace_data: Dict[str, Any], out_png: Path) -> Path:

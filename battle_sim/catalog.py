@@ -1,5 +1,5 @@
 """
-LLM Battle-Cars — Parts Catalog, Raw Physical Sensors & DIY Strategy Linter (v3.1).
+LLM Battle-Cars — Parts Catalog, Raw Physical Sensors & DIY Strategy Linter (v4.0).
 
 Defines:
 - Fair-play tournament limits (max functional parts, build points, active weapons, simulation quota)
@@ -121,7 +121,17 @@ VALID_NUMERIC_SENSORS = frozenset({
     "enemy_spring_y",
     "enemy_spring_dist",
     "enemy_spring_fling_yaw_deg",
-    # Nearest quantum portal to self & to enemy (Stage 3 portal_arena; 9.9 if none on stage)
+    # Stage 2 Mud Bog sensors (mud_arena; 9.9 / False if none on stage)
+    "mud_x",
+    "mud_y",
+    "mud_dist",
+    "mud_angle_deg",
+    "abs_mud_angle_deg",
+    # Stage 3 Mirror-Ice sensors (ice_ridge; 9.9 / False if none on stage)
+    "ice_dist",
+    "ice_angle_deg",
+    "abs_ice_angle_deg",
+    # Legacy portal sensors kept silently for archival backward-compatibility
     "portal_x",
     "portal_y",
     "portal_dist",
@@ -158,6 +168,10 @@ VALID_BOOL_SENSORS = frozenset({
     "cannon_ready",
     "spring_ready",
     "enemy_spring_ready",
+    "in_mud",
+    "enemy_in_mud",
+    "on_ice",
+    "enemy_on_ice",
     "portal_ready",
     "enemy_portal_ready",
 })
@@ -491,7 +505,10 @@ _VALID_STAGE_OVERRIDE_KEYS = frozenset({
     "s1", "s2", "s3",
     "stage1", "stage2", "stage3",
     "stage_1", "stage_2", "stage_3",
-    "spring_arena", "camelback_ridge", "portal_arena", "turbo_bowl",
+    "spring_arena", "cyber_springs",
+    "mud_arena", "emerald_mudlands",
+    "ice_ridge", "glacier_overpass",
+    "camelback_ridge", "portal_arena", "turbo_bowl",
     "vortex_crown", "twin_drawbridge", "forge_colosseum",
     "cyclone_ring", "pendulum_bridge", "crusher_pit",
 })
@@ -831,7 +848,7 @@ def _lint_strategy_dict(
                 if sk_clean not in _VALID_STAGE_OVERRIDE_KEYS:
                     errors.append(
                         f"strategy.stage_overrides[{sk!r}]: unrecognized stage key {sk!r}. "
-                        f"Use '1', '2', '3' or 'spring_arena', 'camelback_ridge', 'portal_arena'."
+                        f"Use '1', '2', '3' or 'spring_arena', 'mud_arena', 'ice_ridge'."
                     )
                     continue
                 if not isinstance(sv, dict):

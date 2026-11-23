@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-LLM Battle-Cars — Unified Contestant & Tournament CLI (`arena.py`, v3.2).
+LLM Battle-Cars — Unified Contestant & Tournament CLI (`arena.py`, v4.0).
 
 Contestant Commands:
   python arena.py parts
@@ -74,7 +74,7 @@ def _load_car_json(path_str: str) -> Tuple[Path, Dict[str, Any]]:
 def cmd_parts(_args: argparse.Namespace) -> int:
     print("=" * 86)
     print(
-        f"LLM BATTLE-CARS v3.2 CATALOG  (Max {MAX_FUNCTIONAL_PARTS} parts | Max {MAX_BUILD_POINTS} pts | "
+        f"LLM BATTLE-CARS v4.0 CATALOG  (Max {MAX_FUNCTIONAL_PARTS} parts | Max {MAX_BUILD_POINTS} pts | "
         f"Max {MAX_ACTIVE_WEAPONS} active weapons | Max {MAX_ENERGY_CANNONS} 360°-turret cannons | Unrestricted LxWxH!)"
     )
     print("=" * 86)
@@ -85,7 +85,7 @@ def cmd_parts(_args: argparse.Namespace) -> int:
     print(f"  - Shapes   : {', '.join(DECO_SHAPES)}")
     print(f"  - Materials: {', '.join(VALID_MATERIALS)}")
     print(f"  - Mounts   : {', '.join(MOUNT_ANCHORS.keys())}")
-    print("\nThree Distinct BO3 Tactical Arenas (30s/round, Catapults, Ridge Vaults & Quantum Portals):")
+    print("\nThree Distinct BO3 Tactical Arenas (30s/round — Cyber Catapults, Viscous Mudlands & Glacier Mirror-Ice):")
     for sk in ARENA_ORDER:
         am = ARENA_META[sk]
         print(f"  - Stage {am['stage_id']} ({sk} / {am['name_zh']}): {am['description']}")
@@ -307,7 +307,7 @@ def cmd_tournament(args: argparse.Namespace) -> int:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    p = argparse.ArgumentParser(description="LLM Battle-Cars Simulation & BO3 Tournament CLI (v3.0)")
+    p = argparse.ArgumentParser(description="LLM Battle-Cars Simulation & BO3 Tournament CLI (v4.0)")
     sub = p.add_subparsers(dest="command", required=True)
 
     sp_parts = sub.add_parser("parts", help="Show parts catalog, point costs, mounts, and arenas (0 credits)")
@@ -326,7 +326,7 @@ def build_parser() -> argparse.ArgumentParser:
     sp_prev.set_defaults(func=cmd_preview)
 
     sp_aprev = sub.add_parser("preview-arena", help="Render 3D blueprint PNGs of the 3 BO3 arenas (0 credits)")
-    sp_aprev.add_argument("--stage", default="all", help="all | 1 / spring_arena | 2 / camelback_ridge | 3 / portal_arena")
+    sp_aprev.add_argument("--stage", default="all", help="all | 1 / spring_arena | 2 / mud_arena | 3 / ice_ridge")
     sp_aprev.add_argument("--time", type=float, default=0.0, help="Simulation timestamp (s) to snapshot spring mechanisms (0.0 = symmetrical blueprint)")
     sp_aprev.add_argument("--out", default=None, help="Output directory (default: previews/)")
     sp_aprev.set_defaults(func=cmd_preview_arena)
@@ -344,7 +344,7 @@ def build_parser() -> argparse.ArgumentParser:
     sp_test.add_argument(
         "--stage",
         default="bo3",
-        help="Arena stage: bo3 (3 credits) | 1 / spring_arena | 2 / camelback_ridge | 3 / portal_arena (1 credit)",
+        help="Arena stage: bo3 (3 credits) | 1 / spring_arena | 2 / mud_arena | 3 / ice_ridge (1 credit)",
     )
     sp_test.add_argument(
         "--swap-sides",

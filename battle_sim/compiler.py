@@ -42,10 +42,13 @@ def apply_grounded_mass_drag(
     root_body_id: int,
     vehicle_mass_kg: float,
     is_grounded: bool,
+    mud_factor: float = 0.0,
+    on_ice: bool = False,
 ) -> None:
     """
-    Apply realistic grounded tire rolling resistance proportional to vehicle mass load.
-    Airborne vehicles (`is_grounded=False`) experience zero ground rolling drag, preserving pure ballistic arcs!
+    Apply realistic grounded tire rolling resistance, viscous mud-bog drag (`mud_factor` in 0..1),
+    and near-zero rolling drag on Stage 3 mirror-ice (`on_ice=True`).
+    Airborne vehicles (`is_grounded=False`) experience zero ground drag, preserving pure ballistic arcs!
     """
     data.xfrc_applied[root_body_id, :] = 0.0
     if not is_grounded:
@@ -53,16 +56,26 @@ def apply_grounded_mass_drag(
 
     vel6 = data.cvel[root_body_id]
     vx, vy = float(vel6[3]), float(vel6[4])
+    wz = float(vel6[2])
     spd = math.hypot(vx, vy)
+    mass = float(vehicle_mass_kg)
 
-    excess = max(0.0, float(vehicle_mass_kg) - LOAD_DRAG_BASE_KG)
-    if excess <= 1e-4 or spd <= 1e-4:
-        return
+    f_mag = 0.0
+    excess = max(0.0, mass - LOAD_DRAG_BASE_KG)
+    if excess > 1e-4 and spd > 1e-4:
+        load_factor = excess ** LOAD_DRAG_EXP
+        ice_mul = 0.12 if on_ice else 1.0
+        f_mag += ice_mul * load_factor * (LOAD_ROLL_COEF * math.tanh(3.8 * spd) + LOAD_VISC_COEF * spd)
 
-    load_factor = excess ** LOAD_DRAG_EXP
-    f_mag = load_factor * (LOAD_ROLL_COEF * math.tanh(3.8 * spd) + LOAD_VISC_COEF * spd)
-    data.xfrc_applied[root_body_id, 0] = -f_mag * (vx / spd)
-    data.xfrc_applied[root_body_id, 1] = -f_mag * (vy / spd)
+    # Viscous mud resistance (zero static stiction at spd=0 so cars NEVER dead-stall, uniform ~50% speed!)
+    if mud_factor > 1e-4:
+        if spd > 1e-4:
+            f_mag += mud_factor * ((22.0 + 0.72 * mass) * spd)
+        data.xfrc_applied[root_body_id, 5] = -mud_factor * (0.40 * mass * wz)
+
+    if f_mag > 0.0 and spd > 1e-4:
+        data.xfrc_applied[root_body_id, 0] = -f_mag * (vx / spd)
+        data.xfrc_applied[root_body_id, 1] = -f_mag * (vy / spd)
 
 
 def classify_weight_class(mass_kg: float) -> str:
@@ -968,16 +981,19 @@ def _terrain_surface_z_at(stage_key: str, x: float, y: float) -> float:
     if stage_key == "spring_arena":
         r = math.hypot(x, y)
         return -(r - 2.45) * math.tan(math.radians(7.5)) if r > 2.45 else 0.0
-    if stage_key == "camelback_ridge":
-        ax = abs(x)
-        if ax <= 0.52:
-            return 0.24
-        if ax < 1.75:
-            return 0.24 * (1.75 - ax) / (1.75 - 0.52)
-        return 0.0
-    # portal_arena (flat core |x|<=2.60m, smooth -8.0 deg downward danger aprons |x|>2.60m)
-    ax = abs(x)
-    return -(ax - 2.60) * math.tan(math.radians(8.0)) if ax > 2.60 else 0.0
+    if stage_key == "mud_arena":
+        ay = abs(y)
+        return -(ay - 2.20) * math.tan(math.radians(7.0)) if ay > 2.20 else 0.0
+    # ice_ridge (+0.26m central glacier flyover ramp on |x|<=1.45 & |y|<=2.08; -8.0° icy chutes on |x|>2.75)
+    ax, ay = abs(x), abs(y)
+    if ay <= 2.08:
+        if ax <= 0.42:
+            return 0.26
+        if ax < 1.45:
+            return 0.26 * (1.45 - ax) / (1.45 - 0.42)
+    if ax > 2.75:
+        return -(ax - 2.75) * math.tan(math.radians(8.0))
+    return 0.0
 
 
 def compile_match_scene(

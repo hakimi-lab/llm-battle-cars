@@ -305,6 +305,8 @@ class VehicleController:
             "total_stalled_sec": 0.0,
             "total_inverted_sec": 0.0,
             "total_distance_m": 0.0,
+            "mud_time_sec": 0.0,
+            "ice_time_sec": 0.0,
             "spring_launches_self": 0,
             "spring_launches_enemy": 0,
             "portal_warps_self": 0,
@@ -325,6 +327,8 @@ class VehicleController:
         dt: float,
         enemy_bolts: Optional[List[Dict[str, Any]]] = None,
         hazard_state: Optional[Dict[str, Dict[str, float]]] = None,
+        self_mud_factor: Optional[float] = None,
+        enemy_mud_factor: Optional[float] = None,
     ) -> Dict[str, Any]:
         pos = data.xpos[self.root_body_id]
         R = data.xmat[self.root_body_id].reshape(3, 3)
@@ -374,6 +378,7 @@ class VehicleController:
         arena_q = query_arena_sensors(
             self.stage_key, sx_w, sy_w, t_sec, data, self.hazard_geom_ids,
             enemy_xy=(ex_w, ey_w), hazard_state=hazard_state,
+            self_mud_factor=self_mud_factor, enemy_mud_factor=enemy_mud_factor,
         )
         enemy_arena_q = query_arena_sensors(
             self.stage_key, ex_w, ey_w, t_sec, data, self.hazard_geom_ids,
@@ -385,6 +390,8 @@ class VehicleController:
         cdir_xy = (-sx_w / center_dist, -sy_w / center_dist) if center_dist > 1e-4 else (-arena_q["edge_dir"][0], -arena_q["edge_dir"][1])
         center_angle_deg = _local_angle_deg(fwd_xy, left_xy, cdir_xy)
         spring_angle_deg = _local_angle_deg(fwd_xy, left_xy, arena_q["spring_dir"])
+        mud_angle_deg = _local_angle_deg(fwd_xy, left_xy, arena_q["mud_dir"])
+        ice_angle_deg = _local_angle_deg(fwd_xy, left_xy, arena_q["ice_dir"])
         portal_angle_deg = _local_angle_deg(fwd_xy, left_xy, arena_q["portal_dir"])
 
         cannon_ready = any(t_sec >= c["ready_t"] for c in self.cannons)
@@ -487,6 +494,20 @@ class VehicleController:
             "enemy_spring_fling_yaw_deg": round(float(arena_q["enemy_spring_fling_yaw_deg"]), 2),
             "enemy_spring_ready": bool(arena_q["enemy_spring_ready"]),
 
+            "in_mud": bool(arena_q["in_mud"]),
+            "enemy_in_mud": bool(arena_q["enemy_in_mud"]),
+            "mud_x": round(float(arena_q["mud_x"]), 4),
+            "mud_y": round(float(arena_q["mud_y"]), 4),
+            "mud_dist": round(float(arena_q["mud_dist"]), 4),
+            "mud_angle_deg": round(mud_angle_deg, 2),
+            "abs_mud_angle_deg": round(abs(mud_angle_deg), 2),
+
+            "on_ice": bool(arena_q["on_ice"]),
+            "enemy_on_ice": bool(arena_q["enemy_on_ice"]),
+            "ice_dist": round(float(arena_q["ice_dist"]), 4),
+            "ice_angle_deg": round(ice_angle_deg, 2),
+            "abs_ice_angle_deg": round(abs(ice_angle_deg), 2),
+
             "portal_x": round(float(arena_q["portal_x"]), 4),
             "portal_y": round(float(arena_q["portal_y"]), 4),
             "portal_dist": round(float(arena_q["portal_dist"]), 4),
@@ -528,9 +549,15 @@ class VehicleController:
         dt: float,
         enemy_bolts: Optional[List[Dict[str, Any]]] = None,
         hazard_state: Optional[Dict[str, Dict[str, float]]] = None,
+        self_mud_factor: float = 0.0,
+        enemy_mud_factor: float = 0.0,
         record_stats: bool = True,
     ) -> Dict[str, Any]:
-        sensors = self.compute_sensors(data, t_sec, dt, enemy_bolts=enemy_bolts, hazard_state=hazard_state)
+        sensors = self.compute_sensors(
+            data, t_sec, dt,
+            enemy_bolts=enemy_bolts, hazard_state=hazard_state,
+            self_mud_factor=self_mud_factor, enemy_mud_factor=enemy_mud_factor,
+        )
 
         # Build evaluation environment: base math funcs + raw sensors + persistent state_vars + ordered 'let' bindings
         env: Dict[str, Any] = dict(BASE_EVAL_ENV)
@@ -567,13 +594,18 @@ class VehicleController:
         )
         self.last_wheel_cmd = (left_cmd, right_cmd)
 
+        # Uniform 50% mud speed factor (keeps 100% breakaway torque at v≈0 so cars never dead-stall!)
+        mud_scale = 1.0
+        if self_mud_factor > 1e-4:
+            mud_scale = 1.0 - 0.39 * self_mud_factor * clamp(sensors["self_speed"] / 0.55, 0.0, 1.0)
+
         for aid, chan in self.wheel_acts:
             if chan == "left":
-                data.ctrl[aid] = left_cmd
+                data.ctrl[aid] = left_cmd * mud_scale
             elif chan == "right":
-                data.ctrl[aid] = right_cmd
+                data.ctrl[aid] = right_cmd * mud_scale
             else:
-                data.ctrl[aid] = center_cmd
+                data.ctrl[aid] = center_cmd * mud_scale
 
         if record_stats:
             self.rule_trigger_counts[chosen_name] = self.rule_trigger_counts.get(chosen_name, 0) + 1
@@ -594,6 +626,10 @@ class VehicleController:
                 self.actuator_exec["total_stalled_sec"] += dt
             if sensors["is_inverted"]:
                 self.actuator_exec["total_inverted_sec"] += dt
+            if sensors["in_mud"]:
+                self.actuator_exec["mud_time_sec"] += dt
+            if sensors["on_ice"]:
+                self.actuator_exec["ice_time_sec"] += dt
 
         # 2. Spinners (defaults to 1.0 if omitted when spinner installed)
         spin_pwr = clamp(float(chosen_act["spinner"](env)) if "spinner" in chosen_act else 1.0, -1.0, 1.0)
@@ -833,10 +869,10 @@ class VehicleController:
             "distance_driven_m": round(float(self.actuator_exec["total_distance_m"]), 2),
             "stalled_time_sec": round(float(self.actuator_exec["total_stalled_sec"]), 2),
             "inverted_time_sec": round(float(self.actuator_exec["total_inverted_sec"]), 2),
+            "mud_time_sec": round(float(self.actuator_exec["mud_time_sec"]), 2),
+            "ice_time_sec": round(float(self.actuator_exec["ice_time_sec"]), 2),
             "spring_launches_self": int(self.actuator_exec["spring_launches_self"]),
             "spring_launches_enemy": int(self.actuator_exec["spring_launches_enemy"]),
-            "portal_warps_self": int(self.actuator_exec["portal_warps_self"]),
-            "portal_warps_enemy": int(self.actuator_exec["portal_warps_enemy"]),
         }
         if self.spinner_acts:
             act_report["spinner_active_sec"] = round(float(self.actuator_exec["spinner_active_sec"]), 2)
